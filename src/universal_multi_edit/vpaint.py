@@ -3,6 +3,20 @@ import bpy, bmesh
 NAME = "__UME_COLOR__"
 
 
+def _attr_type(attr):
+    # Blender version compatibility
+    return getattr(attr, "data_type", getattr(attr, "type", "FLOAT_COLOR"))
+
+
+def _quantize_byte_color(c):
+    return (
+        round(max(0.0, min(1.0, c[0])) * 255.0) / 255.0,
+        round(max(0.0, min(1.0, c[1])) * 255.0) / 255.0,
+        round(max(0.0, min(1.0, c[2])) * 255.0) / 255.0,
+        round(max(0.0, min(1.0, c[3])) * 255.0) / 255.0,
+    )
+
+
 def linear_to_srgb(c):
     if c <= 0.0031308:
         return 12.92 * c
@@ -30,6 +44,7 @@ def create_proxy(ctx, objects, session):
     me = bpy.data.meshes.new("UME_VPaint")
     bm = bmesh.new()
     session["map"] = []
+    session["attr_meta"] = {}
     for obj in objects:
         src = bmesh.new()
         src.from_mesh(obj.data)
@@ -37,6 +52,19 @@ def create_proxy(ctx, objects, session):
         src.faces.ensure_lookup_table()
         src.verts.ensure_lookup_table()
         attr = obj.data.color_attributes.active_color if obj.data.color_attributes else None
+
+        if attr:
+            session["attr_meta"][obj.name] = {
+                "name": attr.name,
+                "domain": attr.domain,
+                "type": _attr_type(attr),
+            }
+        else:
+            session["attr_meta"][obj.name] = {
+                "name": "Color",
+                "domain": "CORNER",
+                "type": "FLOAT_COLOR",
+            }
         vmap = {v: bm.verts.new(v.co) for v in src.verts}
         bm.verts.ensure_lookup_table()
         for f in src.faces:
@@ -67,25 +95,56 @@ def create_proxy(ctx, objects, session):
 
 
 def transfer_back(ctx, session):
-    p = bpy.data.objects.get(session["proxy"])
-    if not p:
+
+    proxy = bpy.data.objects.get(session["proxy"])
+    if not proxy:
         return
-    src = p.data.color_attributes.get(NAME)
+
+    src = proxy.data.color_attributes.get(NAME)
     if not src:
         return
+
     count = min(len(src.data), len(session["map"]))
+
     for i in range(count):
-        oname, domain, vidx, lidx, _ = session["map"][i]
-        o = bpy.data.objects.get(oname)
-        if not o:
+        obj_name, domain, vidx, lidx, _ = session["map"][i]
+
+        obj = bpy.data.objects.get(obj_name)
+        if not obj:
             continue
-        if not o.data.color_attributes:
-            attr = o.data.color_attributes.new(name="Color", domain=domain, type="FLOAT_COLOR")
-        else:
-            attr = o.data.color_attributes.active_color
-            if attr.domain != domain:
-                attr = o.data.color_attributes.new(name=attr.name + "_UME", domain=domain, type="FLOAT_COLOR")
-        dst_idx = vidx if domain == "POINT" else lidx
-        if dst_idx < len(attr.data):
-            attr.data[dst_idx].color = _read_color(src, i)
-        o.data.update()
+
+        meta = session["attr_meta"].get(obj_name, None)
+        if not meta:
+            continue
+
+        # -----------------------------------------
+        # Find original attribute by name
+        # -----------------------------------------
+        attr = obj.data.color_attributes.get(meta["name"])
+
+        if not attr:
+            attr = obj.data.color_attributes.new(name=meta["name"], domain=meta["domain"], type=meta["type"])
+
+        # -----------------------------------------
+        # Ensure correct domain
+        # -----------------------------------------
+        if attr.domain != meta["domain"]:
+            attr = obj.data.color_attributes.new(name=meta["name"] + "_UME", domain=meta["domain"], type=meta["type"])
+
+        dst_index = vidx if meta["domain"] == "POINT" else lidx
+
+        if dst_index >= len(attr.data):
+            continue
+
+        color = src.data[i].color[:]
+
+        # -----------------------------------------
+        # CRITICAL FIX:
+        # BYTE_COLOR explicit quantization
+        # -----------------------------------------
+        if meta["type"] == "BYTE_COLOR":
+            color = _quantize_byte_color(color)
+
+        attr.data[dst_index].color = color
+
+        obj.data.update()
