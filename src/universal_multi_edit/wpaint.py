@@ -5,16 +5,17 @@ NAME = "__UME_WEIGHT__"
 
 def active_group(obj):
     vg = obj.vertex_groups.active
-    return vg.name if vg else obj.vertex_groups.new(name="Group").name
+    return vg.name if vg else obj.vertex_groups.new(name=NAME).name
 
 
 def create_proxy(ctx, objects, session):
     me = bpy.data.meshes.new("UME_WPaint")
     bm = bmesh.new()
+    group = {}
     session["vert_map"] = []
-    group = active_group(ctx.view_layer.objects.active)
-    session["group"] = group
     for obj in objects:
+        group[obj.name] = active_group(obj)
+        session["group"] = group
         vmap = {}
         src = bmesh.new()
         src.from_mesh(obj.data)
@@ -32,16 +33,18 @@ def create_proxy(ctx, objects, session):
         src.free()
     bm.to_mesh(me)
     bm.free()
+
     obj = bpy.data.objects.new("UME_Proxy", me)
     ctx.scene.collection.objects.link(obj)
-    if group:
-        obj.vertex_groups.new(name=group)
+
+    obj.vertex_groups.new(name=NAME)
+
     vg = obj.vertex_groups.active
     for i, (oname, vi) in enumerate(session["vert_map"]):
         src_obj = bpy.data.objects.get(oname)
-        if not src_obj or not group:
+        if not src_obj or not group[src_obj.name]:
             continue
-        g = src_obj.vertex_groups.get(group)
+        g = src_obj.vertex_groups.get(group[src_obj.name])
         w = 0.0
         if g:
             try:
@@ -57,16 +60,14 @@ def transfer_back(ctx, session):
     if not p:
         return
     group = session.get("group")
-    vg = p.vertex_groups.get(group) if group else None
-    if not vg:
-        return
     for i, (oname, vi) in enumerate(session["vert_map"]):
         o = bpy.data.objects.get(oname)
         if not o:
             continue
-        dst = o.vertex_groups.get(group) or o.vertex_groups.new(name=group)
+        vg = group[oname]
+        dst = o.vertex_groups.get(vg) or o.vertex_groups.new(name=vg)
         try:
-            w = vg.weight(i)
+            w = p.vertex_groups.get(NAME).weight(i)
         except:
             w = 0.0
         dst.add([vi], w, "REPLACE")
