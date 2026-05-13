@@ -2,106 +2,61 @@ import bpy
 import bmesh
 from .utils import new_object, active_color
 
-UME_COLOR = "__UME_VERTEX_COLOR__"
+NAME = "__UME_COLOR__"
 
 
 def create_proxy(ctx, objects, session):
-
-    mesh = bpy.data.meshes.new("UME_VPaint")
+    me = bpy.data.meshes.new("UME_VPaint")
     bm = bmesh.new()
-
-    color_layer = bm.loops.layers.color.new(UME_COLOR)
-
+    layer = bm.loops.layers.color.new(NAME)
     session["loop_map"] = []
-
     for obj in objects:
         src = bmesh.new()
         src.from_mesh(obj.data)
         src.transform(obj.matrix_world)
-
-        src.faces.ensure_lookup_table()
-        src.verts.ensure_lookup_table()
-
-        src_attr = None
-        if obj.data.color_attributes:
-            src_attr = obj.data.color_attributes.active_color
-
-        vmap = {}
-
-        for v in src.verts:
-            vmap[v] = bm.verts.new(v.co)
-
+        attr = obj.data.color_attributes.active_color if obj.data.color_attributes else None
+        vmap = {v: bm.verts.new(v.co) for v in src.verts}
         bm.verts.ensure_lookup_table()
-
-        for face in src.faces:
+        for f in src.faces:
             try:
-                new_face = bm.faces.new([vmap[v] for v in face.verts])
-            except ValueError:
+                nf = bm.faces.new([vmap[v] for v in f.verts])
+            except:
                 continue
-
-            for ls, ld in zip(face.loops, new_face.loops):
-                # safe color read
+            for ls, ld in zip(f.loops, nf.loops):
                 col = (1, 1, 1, 1)
-
-                if src_attr and ls.index < len(src_attr.data):
-                    col = src_attr.data[ls.index].color[:]
-                    print(src_attr.data[ls.index].color[0])
-
-                ld[color_layer] = col
-
-                # CRITICAL: store exact ownership
+                if attr and ls.index < len(attr.data):
+                    col = attr.data[ls.index].color[:]
+                ld[layer] = col
                 session["loop_map"].append((obj.name, ls.index))
-
         src.free()
-
-    bm.to_mesh(mesh)
+    bm.to_mesh(me)
     bm.free()
-
-    proxy = bpy.data.objects.new("UME_Proxy", mesh)
-    ctx.scene.collection.objects.link(proxy)
-
-    # force one attribute only
-    while len(proxy.data.color_attributes) > 1:
-        proxy.data.color_attributes.remove(proxy.data.color_attributes[0])
-
-    attr = proxy.data.color_attributes[0]
-    attr.name = UME_COLOR
-    proxy.data.color_attributes.active_color = attr
-    proxy.data.color_attributes.active_color_index = 0
-
-    session["proxy"] = proxy.name
-
-    return proxy
+    # force FLOAT_COLOR layer to avoid darkening
+    while me.color_attributes:
+        me.color_attributes.remove(me.color_attributes[0])
+    ca = me.color_attributes.new(name=NAME, domain="CORNER", type="FLOAT_COLOR")
+    for i in range(min(len(ca.data), len(session["loop_map"]))):
+        pass
+    obj = bpy.data.objects.new("UME_Proxy", me)
+    ctx.scene.collection.objects.link(obj)
+    me.color_attributes.active_color = ca
+    return obj
 
 
 def transfer_back(ctx, session):
-
-    proxy = bpy.data.objects.get(session["proxy"])
-    if not proxy:
+    p = bpy.data.objects.get(session["proxy"])
+    if not p:
         return
-
-    src = proxy.data.color_attributes.get(UME_COLOR)
+    src = p.data.color_attributes.get(NAME)
     if not src:
         return
-
-    loop_map = session.get("loop_map", [])
-
-    count = min(len(loop_map), len(src.data))
-
+    count = min(len(src.data), len(session["loop_map"]))
     for i in range(count):
-        obj_name, loop_index = loop_map[i]
-
-        obj = bpy.data.objects.get(obj_name)
-        if not obj:
+        oname, li = session["loop_map"][i]
+        o = bpy.data.objects.get(oname)
+        if not o or not o.data.color_attributes:
             continue
-
-        dst = obj.data.color_attributes.active_color
-        if not dst:
-            continue
-
-        if loop_index >= len(dst.data):
-            continue
-
-        dst.data[loop_index].color = src.data[i].color[:]
-
-        obj.data.update()
+        dst = o.data.color_attributes.active_color
+        if li < len(dst.data):
+            dst.data[li].color = src.data[i].color[:]
+        o.data.update()

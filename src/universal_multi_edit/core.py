@@ -40,6 +40,8 @@ def start(ctx, mode):
         proxy = vpaint.create_proxy(ctx, objs, SESSION)
     elif mode == "TEXTURE_PAINT":
         proxy = tpaint.create_proxy(ctx, objs, SESSION)
+    elif mode == "WEIGHT_PAINT":
+        proxy = wpaint.create_proxy(ctx, objs, SESSION)
 
     if not proxy:
         print("UME: proxy creation failed")
