@@ -1,13 +1,13 @@
 import bpy
 
 
-def new_proxy_object(context, name, mesh):
+def new_object(context, name, mesh):
     obj = bpy.data.objects.new(name, mesh)
     context.scene.collection.objects.link(obj)
     return obj
 
 
-def active_color_name(obj):
+def active_color(obj):
 
     if not obj.data.color_attributes:
         return None
