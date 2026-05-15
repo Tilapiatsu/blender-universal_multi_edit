@@ -76,17 +76,17 @@ def create_proxy(context, objects, session):
     proxy = bpy.data.objects.new("MOS_Proxy", mesh)
     context.scene.collection.objects.link(proxy)
 
-    session["proxy_name"] = proxy.name
-    session["mapping"] = mapping
-    session["instances"] = instances
-    session["multires_cache"] = multires_cache
+    session.set("proxy_name", proxy.name)
+    session.set("mapping", mapping)
+    session.set("instances", instances)
+    session.set("multires_cache", multires_cache)
 
     return proxy
 
 
 def apply_multires_back(context, obj, coords, mesh_id, session):
 
-    original = session["multires_cache"].get(mesh_id, [])
+    original = session.get("multires_cache").get(mesh_id, [])
 
     # no-change detection
     if len(original) == len(coords):
@@ -130,14 +130,13 @@ def apply_multires_back(context, obj, coords, mesh_id, session):
 
 
 def transfer_back(context, session):
-
     proxy = bpy.data.objects.get(session.get("proxy_name"))
     if not proxy:
         return
 
     proxy_verts = proxy.data.vertices
-    mapping = session["mapping"]
-    instances = session["instances"]
+    mapping = session.get("mapping")
+    instances = session.get("instances")
 
     grouped = {}
 

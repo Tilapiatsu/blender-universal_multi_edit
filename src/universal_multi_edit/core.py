@@ -1,185 +1,291 @@
 import bpy
+import functools
+
 from bpy.app.handlers import persistent
 
-from . import sculpt, vpaint, wpaint, tpaint
+from .session import UME_Session
+from .state_machine import UME_State
 
-SESSION = {}
+from . import sculpt
+from . import vpaint
+from . import wpaint
+from . import tpaint
 
-_LAST_MODE = None
-PENDING = {"start": False, "finish": False, "mode": None}
-_TIMER = False
+SESSION = None
+
+SUPPORTED = {
+    "SCULPT",
+    "VERTEX_PAINT",
+    "WEIGHT_PAINT",
+    "TEXTURE_PAINT",
+}
+
+MODE_MODULES = {
+    "SCULPT": sculpt,
+    "VERTEX_PAINT": vpaint,
+    "WEIGHT_PAINT": wpaint,
+    "TEXTURE_PAINT": tpaint,
+}
 
 
-SUPPORTED = {"SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT"}
+# ---------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------
 
 
-# -------------------------------------------------
 def selected_meshes(ctx):
+
     return [o for o in ctx.selected_objects if o.type == "MESH"]
 
 
-# -------------------------------------------------
-def start(ctx, mode):
+def current_mode(ctx):
+    obj = ctx.active_object
 
+    if not obj:
+        return "OBJECT"
+
+    return obj.mode
+
+
+# ---------------------------------------------------------
+# SESSION MANAGEMENT
+# ---------------------------------------------------------
+
+
+def create_session(ctx, mode):
+    global SESSION
     objs = selected_meshes(ctx)
+
     if len(objs) <= 1:
         return None
 
-    SESSION.clear()
-
-    SESSION["mode"] = mode
-    SESSION["objects"] = [o.name for o in objs]
-    SESSION["active"] = ctx.view_layer.objects.active.name if ctx.view_layer.objects.active else None
-    SESSION["visibility"] = {o.name: o.hide_get() for o in objs}
-
-    proxy = None
-
-    if mode == "SCULPT":
-        proxy = sculpt.create_proxy(ctx, objs, SESSION)
-    elif mode == "VERTEX_PAINT":
-        proxy = vpaint.create_proxy(ctx, objs, SESSION)
-    elif mode == "TEXTURE_PAINT":
-        proxy = tpaint.create_proxy(ctx, objs, SESSION)
-    elif mode == "WEIGHT_PAINT":
-        proxy = wpaint.create_proxy(ctx, objs, SESSION)
-
-    if not proxy:
-        print("UME: proxy creation failed")
-        return None
-
-    # IMPORTANT: force link only here (single authority)
-    if proxy.name not in ctx.scene.collection.objects:
-        ctx.scene.collection.objects.link(proxy)
-
-    SESSION["proxy"] = proxy.name
-
-    for o in objs:
-        o.hide_set(True)
-
-    bpy.ops.object.select_all(action="DESELECT")
-    proxy.select_set(True)
-    ctx.view_layer.objects.active = proxy
-
-    return proxy
+    s = UME_Session()
+    s.mode = mode
+    s.objects = [o.name for o in objs]
+    s.capture_scene_state(ctx)
+    SESSION = s
+    return s
 
 
-# -------------------------------------------------
-def finish(ctx):
-
-    mode = SESSION.get("mode")
-
-    if mode == "SCULPT":
-        sculpt.transfer_back(ctx, SESSION)
-    elif mode == "VERTEX_PAINT":
-        vpaint.transfer_back(ctx, SESSION)
-    elif mode == "WEIGHT_PAINT":
-        wpaint.transfer_back(ctx, SESSION)
-    elif mode == "TEXTURE_PAINT":
-        tpaint.transfer_back(ctx, SESSION)
-
-    proxy = bpy.data.objects.get(SESSION.get("proxy"))
-    if proxy:
-        bpy.data.objects.remove(proxy, do_unlink=True)
-
-    for name, state in SESSION["visibility"].items():
-        obj = bpy.data.objects.get(name)
-        if obj:
-            obj.hide_set(state)
-
-    bpy.ops.object.select_all(action="DESELECT")
-
-    for n in SESSION["objects"]:
-        o = bpy.data.objects.get(n)
-        if o:
-            o.select_set(True)
-
-    if SESSION.get("active"):
-        act = bpy.data.objects.get(SESSION["active"])
-        if act:
-            ctx.view_layer.objects.active = act
-
-    SESSION.clear()
+def destroy_session():
+    global SESSION
+    SESSION = None
 
 
-# -------------------------------------------------
-def timer():
-
-    global _TIMER
-
-    ctx = bpy.context
-
-    try:
-        if PENDING["start"]:
-            PENDING["start"] = False
-
-            if ctx.mode != "OBJECT":
-                bpy.ops.object.mode_set(mode="OBJECT")
-
-            # IMPORTANT: create proxy FIRST
-            start(ctx, PENDING["mode"])
-
-            proxy = bpy.data.objects.get(SESSION.get("proxy"))
-            if not proxy:
-                print("UME: proxy missing after creation")
-                return None
-
-            # delay mode switch one tick (CRITICAL FIX)
-            def _enter_mode():
-                bpy.ops.object.select_all(action="DESELECT")
-                proxy.select_set(True)
-                ctx.view_layer.objects.active = proxy
-                bpy.ops.object.mode_set(mode=PENDING["mode"])
-                return None
-
-            bpy.app.timers.register(_enter_mode, first_interval=0.01)
-
-        elif PENDING["finish"]:
-            PENDING["finish"] = False
-
-            if ctx.mode != "OBJECT":
-                bpy.ops.object.mode_set(mode="OBJECT")
-
-            finish(ctx)
-
-    except Exception as e:
-        print("UME:", e)
-
-    _TIMER = False
-    return None
+# ---------------------------------------------------------
+# CLEANUP
+# ---------------------------------------------------------
 
 
-# -------------------------------------------------
-@persistent
-def watcher(scene):
+def cleanup_session(ctx):
+    global SESSION
 
-    global _LAST_MODE, _TIMER
-
-    ctx = bpy.context
-    obj = ctx.active_object
-    mode = obj.mode if obj else "OBJECT"
-
-    if _LAST_MODE is None:
-        _LAST_MODE = mode
+    if not SESSION:
         return
 
-    if _LAST_MODE != mode and mode in SUPPORTED:
-        if len(selected_meshes(ctx)) > 1:
-            PENDING["start"] = True
-            PENDING["mode"] = mode
+    proxy = SESSION.proxy
 
-    elif SESSION and _LAST_MODE == SESSION.get("mode") and mode != _LAST_MODE:
-        PENDING["finish"] = True
+    # -----------------------------------------
+    # remove proxy
+    # -----------------------------------------
 
-    if (PENDING["start"] or PENDING["finish"]) and not _TIMER:
-        _TIMER = True
-        bpy.app.timers.register(timer, first_interval=0.01)
+    if proxy:
+        try:
+            bpy.data.objects.remove(proxy, do_unlink=True)
+        except:
+            pass
 
-    _LAST_MODE = mode
+    # -----------------------------------------
+    # restore scene
+    # -----------------------------------------
+
+    SESSION.restore_scene_state(ctx)
+
+
+# ---------------------------------------------------------
+# ENTER
+# ---------------------------------------------------------
+
+
+def enter_mode(ctx, mode):
+    global SESSION
+    if SESSION:
+        return
+
+    session = create_session(ctx, mode)
+
+    if not session:
+        return
+
+    module = MODE_MODULES[mode]
+
+    try:
+        if ctx.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+        proxy = module.create_proxy(ctx, list(session.iter_objects()), session)
+
+        session.proxy_name = proxy.name
+
+        # -------------------------------------
+        # hide originals
+        # -------------------------------------
+
+        for obj in session.iter_objects():
+            obj.hide_set(True)
+
+        # -------------------------------------
+        # activate proxy
+        # -------------------------------------
+
+        bpy.ops.object.select_all(action="DESELECT")
+
+        proxy.hide_set(False)
+        proxy.select_set(True)
+
+        ctx.view_layer.objects.active = proxy
+
+        # -------------------------------------
+        # switch mode
+        # -------------------------------------
+
+        bpy.ops.object.mode_set(mode=mode)
+
+        session.state = UME_State.ACTIVE
+
+        # -------------------------------------
+        # start monitor
+        # -------------------------------------
+
+        if not session.monitor_running:
+            session.monitor_running = True
+            bpy.app.timers.register(session_monitor, first_interval=0.1)
+
+    except Exception as e:
+        print("UME ENTER ERROR:", e)
+        cleanup_session(ctx)
+        destroy_session()
+
+
+# ---------------------------------------------------------
+# EXIT
+# ---------------------------------------------------------
+
+
+def exit_mode(ctx):
+    global SESSION
+    if not SESSION:
+        return
+
+    session = SESSION
+
+    if session.state != UME_State.ACTIVE:
+        return
+
+    session.state = UME_State.EXITING
+    module = MODE_MODULES[session.mode]
+
+    try:
+        module.transfer_back(ctx, session)
+
+    except Exception as e:
+        print("UME EXIT ERROR:", e)
+
+    cleanup_session(ctx)
+    session.monitor_running = False
+    session.state = UME_State.IDLE
+    destroy_session()
+
+
+def session_monitor():
+    global SESSION
+    if not SESSION:
+        return None
+
+    ctx = bpy.context
+    proxy = SESSION.proxy
+
+    # -----------------------------------------
+    # proxy deleted manually
+    # -----------------------------------------
+
+    if not proxy:
+        try:
+            exit_mode(ctx)
+        except Exception as e:
+            print("UME MONITOR:", e)
+
+        return None
+
+    # -----------------------------------------
+    # user exited mode
+    # -----------------------------------------
+
+    mode = proxy.mode if proxy else "OBJECT"
+
+    if mode != SESSION.mode:
+        try:
+            exit_mode(ctx)
+        except Exception as e:
+            print("UME MONITOR:", e)
+
+        return None
+
+    return 0.1
+
+
+# ---------------------------------------------------------
+# WATCHER
+# ---------------------------------------------------------
+
+
+@persistent
+def ume_watcher(scene):
+    global SESSION
+    ctx = bpy.context
+
+    if SESSION:
+        return
+
+    obj = ctx.active_object
+
+    if not obj:
+        return
+
+    mode = obj.mode
+
+    if mode not in SUPPORTED:
+        return
+
+    if len(selected_meshes(ctx)) <= 1:
+        return
+
+    bpy.app.timers.register(functools.partial(_safe_enter, ctx, mode), first_interval=0.01)
+
+
+# ---------------------------------------------------------
+# SAFE WRAPPERS
+# ---------------------------------------------------------
+
+
+def _safe_enter(ctx, mode):
+    try:
+        enter_mode(ctx, mode)
+
+    except Exception as e:
+        print("UME SAFE ENTER:", e)
+
+
+# ---------------------------------------------------------
+# REGISTER
+# ---------------------------------------------------------
 
 
 def register():
-    bpy.app.handlers.depsgraph_update_post.append(watcher)
+    if ume_watcher not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(ume_watcher)
 
 
 def unregister():
-    bpy.app.handlers.depsgraph_update_post.remove(watcher)
+    if ume_watcher in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(ume_watcher)

@@ -12,15 +12,6 @@ def byte_to_float(c):
     )
 
 
-# def float_to_byte(c):
-#     return (
-#         round(max(0.0, min(1.0, c[0])) * 255.0) / 255.0,
-#         round(max(0.0, min(1.0, c[1])) * 255.0) / 255.0,
-#         round(max(0.0, min(1.0, c[2])) * 255.0) / 255.0,
-#         round(max(0.0, min(1.0, c[3])) * 255.0) / 255.0,
-#     )
-
-
 def float_to_byte(c):
 
     def q(x):
@@ -49,11 +40,6 @@ def _attr_type(attr):
     return getattr(attr, "data_type", getattr(attr, "type", "FLOAT_COLOR"))
 
 
-def _read_color(attr, idx):
-    c = attr.data[idx].color[:]
-    return (float(c[0]), float(c[1]), float(c[2]), float(c[3]))
-
-
 def _ensure_proxy_attr(me):
     while me.color_attributes:
         me.color_attributes.remove(me.color_attributes[0])
@@ -63,8 +49,8 @@ def _ensure_proxy_attr(me):
 def create_proxy(ctx, objects, session):
     me = bpy.data.meshes.new("UME_VPaint")
     bm = bmesh.new()
-    session["map"] = []
-    session["attr_meta"] = {}
+    session.set("map", [])
+    session.set("attr_meta", {})
     for obj in objects:
         src = bmesh.new()
         src.from_mesh(obj.data)
@@ -123,7 +109,7 @@ def create_proxy(ctx, objects, session):
 
 
 def transfer_back(ctx, session):
-    proxy = bpy.data.objects.get(session["proxy"])
+    proxy = session.proxy
     if not proxy:
         return
 

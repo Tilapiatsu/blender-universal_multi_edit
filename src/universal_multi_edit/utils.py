@@ -78,3 +78,8 @@ def ensure_active_color_layer(mesh, name):
 
     mesh.color_attributes.active_color = layer
     return layer
+
+
+def deselect_all():
+    for o in bpy.context.selected_objects:
+        o.select_set(False)

@@ -12,10 +12,10 @@ def create_proxy(ctx, objects, session):
     me = bpy.data.meshes.new("UME_WPaint")
     bm = bmesh.new()
     group = {}
-    session["vert_map"] = []
+    session.set("vert_map", [])
     for obj in objects:
         group[obj.name] = active_group(obj)
-        session["group"] = group
+        session.set("group", group)
         vmap = {}
         src = bmesh.new()
         src.from_mesh(obj.data)
@@ -56,7 +56,7 @@ def create_proxy(ctx, objects, session):
 
 
 def transfer_back(ctx, session):
-    p = bpy.data.objects.get(session["proxy"])
+    p = session.proxy
     if not p:
         return
     group = session.get("group")
