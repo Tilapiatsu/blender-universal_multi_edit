@@ -110,10 +110,6 @@ class UME_Core:
         if not self.session:
             return
 
-        # if context.mode in MODE_MODULES.keys() and self.session.state.name == UME_State.EDIT:
-        #     module = MODE_MODULES[context.mode]
-        #     self.session.state.exit(context)
-
         module = MODE_MODULES[mode].Mode()
 
         self.session.state = EditState(self, module)
