@@ -1,4 +1,4 @@
-from sys import monitoring
+from __future__ import annotations
 import bpy
 
 from bpy.app.handlers import persistent
@@ -11,7 +11,7 @@ from . import wpaint
 from . import tpaint
 
 from enum import Enum
-from typing import Protocol
+from typing import Protocol, Union
 from dataclasses import dataclass
 
 SESSION = None
@@ -127,12 +127,13 @@ CORE = UME_Core()
 
 class UME_EditModeState(Protocol):
     core: UME_Core
+    name: UME_State
 
     def enter(self, context) -> None: ...
 
     def exit(self, context, mode: str = "OBJECT") -> None: ...
 
-    def monitor(self): ...
+    def monitor(self) -> Union[float, None]: ...
 
 
 @dataclass
@@ -140,12 +141,15 @@ class IdleState(UME_EditModeState):
     core: UME_Core
     name = UME_State.IDLE
 
+    def __init__(self, core: UME_Core) -> None:
+        self.core = core
+
     def enter(self, context) -> None:
         print("Entering OBJECT mode")
 
     def exit(self, context, mode: str = "OBJECT") -> None: ...
 
-    def monitor(self): ...
+    def monitor(self) -> Union[float, None]: ...
 
 
 @dataclass
@@ -153,6 +157,10 @@ class EditState(UME_EditModeState):
     core: UME_Core
     module: UME_EditMode
     name = UME_State.EDIT
+
+    def __init__(self, core: UME_Core, module: UME_EditMode) -> None:
+        self.core = core
+        self.module = module
 
     def enter(self, context) -> None:
         mode = self.module.name
@@ -162,6 +170,9 @@ class EditState(UME_EditModeState):
                 bpy.ops.object.mode_set(mode="OBJECT")
 
             session = self.core.session
+            if session is None:
+                return
+
             proxy = self.module.create_proxy(context, list(session.iter_objects()), session)
             session.proxy_name = proxy.name
 
@@ -207,6 +218,9 @@ class EditState(UME_EditModeState):
 
         print(f"Exiting {session.mode} mode")
 
+        if session.state is None:
+            return
+
         if session.state.name != UME_State.EDIT:
             return
 
@@ -226,7 +240,7 @@ class EditState(UME_EditModeState):
             session.state = IdleState(self.core)
             self.core.destroy_session()
 
-    def monitor(self):
+    def monitor(self) -> Union[float, None]:
         session = self.core.session
         if not session:
             return

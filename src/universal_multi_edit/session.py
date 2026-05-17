@@ -1,8 +1,14 @@
+from __future__ import annotations
 import bpy
 import uuid
+from .core import UME_EditModeState
+from typing import Union
 
 
 class UME_Session:
+    mode: Union[str, None]
+    state: Union[UME_EditModeState, None]
+
     def __init__(self):
         self.id = str(uuid.uuid4())
         self.mode = None
