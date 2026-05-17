@@ -1,6 +1,5 @@
 import bpy
 import uuid
-from .state_machine import UME_State
 
 
 class UME_Session:
@@ -13,9 +12,7 @@ class UME_Session:
         self.hidden_states = {}
         self.selection_states = {}
         self.data = {}
-        self.running = False
-        self.state = UME_State.IDLE
-        self.internal_transition = False
+        self.state = None
         self.monitor_running = False
 
     # -----------------------------------------------------
@@ -102,9 +99,7 @@ class UME_Session:
                 "hidden_states": self.hidden_states,
                 "selection_states": self.selection_states,
                 "data": self.data,
-                "running": self.running,
                 "state": self.state,
-                "internal_transition": self.internal_transition,
                 "monitor_running": self.monitor_running,
             }
         )
