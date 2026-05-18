@@ -1,4 +1,5 @@
 import bpy, bmesh
+from .session import UME_Session
 
 from .edit_mode import UME_EditMode
 
@@ -16,11 +17,14 @@ class Mode(UME_EditMode):
     def create_proxy(self, context, objects, session) -> bpy.types.Object:
         me = bpy.data.meshes.new("UME_WPaint")
         bm = bmesh.new()
-        group = {}
-        session.set("vert_map", [])
+        session.set("wpaint_meta", {})
+
+        self._init_offsets()
+
         for obj in objects:
-            group[obj.name] = active_group(obj)
-            session.set("group", group)
+            self._store_object_offsets(obj, session)
+
+            session["wpaint_meta"][obj.name] = {"active_group": active_group(obj)}
             vmap = {}
             src = bmesh.new()
             src.from_mesh(obj.data)
@@ -28,7 +32,6 @@ class Mode(UME_EditMode):
             for v in src.verts:
                 nv = bm.verts.new(v.co)
                 vmap[v] = nv
-                session["vert_map"].append((obj.name, v.index))
             bm.verts.ensure_lookup_table()
             for f in src.faces:
                 try:
@@ -36,42 +39,55 @@ class Mode(UME_EditMode):
                 except:
                     pass
             src.free()
+
+            self._apply_offsets(obj)
+
         bm.to_mesh(me)
         bm.free()
 
-        obj = bpy.data.objects.new("UME_Proxy", me)
-        context.scene.collection.objects.link(obj)
+        proxy = bpy.data.objects.new("UME_Proxy", me)
+        context.scene.collection.objects.link(proxy)
 
-        obj.vertex_groups.new(name=NAME)
+        proxy.vertex_groups.new(name=NAME)
 
-        vg = obj.vertex_groups.active
-        for i, (oname, vi) in enumerate(session["vert_map"]):
-            src_obj = bpy.data.objects.get(oname)
-            if not src_obj or not group[src_obj.name]:
-                continue
-            g = src_obj.vertex_groups.get(group[src_obj.name])
-            w = 0.0
-            if g:
-                try:
-                    w = g.weight(vi)
-                except:
-                    pass
-            vg.add([i], w, "REPLACE")
-        return obj
+        self._transfer(context, session, proxy, transfer_back=False)
+
+        return proxy
 
     def transfer_back(self, context, session) -> None:
-        p = session.proxy
-        if not p:
+        proxy = session.proxy
+        if not proxy:
             return
-        group = session.get("group")
-        for i, (oname, vi) in enumerate(session["vert_map"]):
-            o = bpy.data.objects.get(oname)
-            if not o:
+
+        self._transfer(context, session, proxy, transfer_back=True)
+
+    def _transfer(self, context, session: UME_Session, proxy: bpy.types.Object, transfer_back: bool = True) -> None:
+        for topo in self._iter_topology_objects(session):
+            obj = topo["object"]
+
+            if not obj:
                 continue
-            vg = group[oname]
-            dst = o.vertex_groups.get(vg) or o.vertex_groups.new(name=vg)
-            try:
-                w = p.vertex_groups.get(NAME).weight(i)
-            except:
-                w = 0.0
-            dst.add([vi], w, "REPLACE")
+
+            meta = session["wpaint_meta"].get(obj.name)
+
+            if not meta:
+                continue
+
+            active_name = meta["active_group"]
+
+            if transfer_back:
+                src = proxy.vertex_groups.get(NAME)
+                dst = obj.vertex_groups.get(active_name)
+            else:
+                src = obj.vertex_groups.get(active_name)
+                dst = proxy.vertex_groups.get(NAME)
+
+            if not dst:
+                dst = obj.vertex_groups.new(name=active_name)
+
+            self._transfer_vertex_weights(src, dst, topo, transfer_back=transfer_back)
+
+            if transfer_back:
+                obj.data.update()
+            else:
+                proxy.data.update()

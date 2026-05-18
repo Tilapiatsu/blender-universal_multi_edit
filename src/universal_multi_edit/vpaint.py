@@ -1,5 +1,6 @@
 import bpy, bmesh
 
+from .protocol import UME_P_Session
 from .edit_mode import UME_EditMode
 
 NAME = "__UME_COLOR__"
@@ -42,7 +43,7 @@ def _attr_type(attr):
     return getattr(attr, "data_type", getattr(attr, "type", "FLOAT_COLOR"))
 
 
-def _ensure_proxy_attr(me):
+def _ensure_proxy_attr(me: bpy.types.Mesh) -> bpy.types.AttributeGroupMesh:
     while me.color_attributes:
         me.color_attributes.remove(me.color_attributes[0])
     return me.color_attributes.new(name=NAME, domain="CORNER", type="FLOAT_COLOR")
@@ -51,12 +52,16 @@ def _ensure_proxy_attr(me):
 class Mode(UME_EditMode):
     name: str = "VERTEX_PAINT"
 
-    def create_proxy(self, context, objects, session) -> bpy.types.Object:
+    def create_proxy(self, context, objects, session: UME_P_Session) -> bpy.types.Object:
         me = bpy.data.meshes.new("UME_VPaint")
         bm = bmesh.new()
         session.set("map", [])
         session.set("attr_meta", {})
+
+        self._init_offsets()
+
         for obj in objects:
+            self._store_object_offsets(obj, session)
             src = bmesh.new()
             src.from_mesh(obj.data)
             src.transform(obj.matrix_world)
@@ -80,7 +85,7 @@ class Mode(UME_EditMode):
             bm.verts.ensure_lookup_table()
             for f in src.faces:
                 try:
-                    nf = bm.faces.new([vmap[v] for v in f.verts])
+                    bm.faces.new([vmap[v] for v in f.verts])
                 except:
                     continue
                 for ls in f.loops:
@@ -93,74 +98,88 @@ class Mode(UME_EditMode):
                                 col = byte_to_float(raw)
                             else:
                                 col = raw
-                            # col = _read_color(attr, src_idx) if src_idx < len(attr.data) else (1, 1, 1, 1)
                         else:
-                            col = (1, 1, 1, 1)
+                            col = (0, 0, 0, 0)
                     else:
-                        col = (1, 1, 1, 1)
+                        col = (0, 0, 0, 0)
+
                     session["map"].append((obj.name, attr.domain if attr else "CORNER", ls.vert.index, ls.index, col))
+
             src.free()
+
+            self._apply_offsets(obj)
+
         bm.to_mesh(me)
         bm.free()
         proxy = bpy.data.objects.new("UME_Proxy", me)
         context.scene.collection.objects.link(proxy)
-        pa = _ensure_proxy_attr(me)
+        _ensure_proxy_attr(me)
         # write colors after mesh exists
-        for i, item in enumerate(session["map"]):
-            if i < len(pa.data):
-                pa.data[i].color = item[4]
-        me.color_attributes.active_color = pa
+
+        self._transfer(context, session, proxy, transfer_back=False)
+
         return proxy
 
-    def transfer_back(self, context, session) -> None:
+    def transfer_back(self, context, session: UME_P_Session) -> None:
         proxy = session.proxy
         if not proxy:
             return
 
+        self._transfer(context, session, proxy, transfer_back=True)
+
+    def _transfer(self, context, session: UME_P_Session, proxy: bpy.types.Object, transfer_back: bool = True) -> None:
         src = proxy.data.color_attributes.get(NAME)
+
         if not src:
             return
 
-        count = min(len(src.data), len(session["map"]))
+        for topo in self._iter_topology_objects(session):
+            obj = topo["object"]
 
-        for i in range(count):
-            obj_name, domain, vidx, lidx, _ = session["map"][i]
-
-            obj = bpy.data.objects.get(obj_name)
             if not obj:
                 continue
 
-            meta = session["attr_meta"].get(obj_name, None)
+            me = obj.data
+            meta = session["attr_meta"].get(obj.name)
+
             if not meta:
                 continue
 
-            # -----------------------------------------
-            # Find original attribute by name
-            # -----------------------------------------
-            attr = obj.data.color_attributes.get(meta["name"])
+            attr_name = meta["name"]
+            attr_type = meta["type"]
+            domain = meta["domain"]
 
-            if not attr:
-                attr = obj.data.color_attributes.new(name=meta["name"], domain=meta["domain"], type=meta["type"])
+            # -------------------------------------------------
+            # recover/create destination attr
+            # -------------------------------------------------
 
-            # -----------------------------------------
-            # Ensure correct domain
-            # -----------------------------------------
-            if attr.domain != meta["domain"]:
-                attr = obj.data.color_attributes.new(
-                    name=meta["name"] + "_UME", domain=meta["domain"], type=meta["type"]
-                )
-
-            dst_index = vidx if meta["domain"] == "POINT" else lidx
-
-            if dst_index >= len(attr.data):
-                continue
-
-            item = attr.data[dst_index]
-            if meta["type"] == "BYTE_COLOR":
-                color = src.data[i].color_srgb[:]
-                item.color_srgb = color
+            if transfer_back:
+                src = proxy.data.color_attributes.get(NAME)
+                dst = me.color_attributes.get(attr_name)
             else:
-                color = src.data[i].color[:]
-                item.color = color
+                src = me.color_attributes.get(attr_name)
+                dst = proxy.data.color_attributes.get(NAME)
 
-            obj.data.update()
+            if not dst:
+                dst = me.color_attributes.new(name=attr_name, type=attr_type, domain=domain)
+
+            # -------------------------------------------------
+            # transfer
+            # -------------------------------------------------
+
+            if attr_type == "BYTE_COLOR":
+                self._transfer_byte_colors(src, dst, topo, transfer_back=transfer_back)
+
+            else:
+                self._transfer_float_colors(src, dst, topo, transfer_back=transfer_back)
+
+            # -------------------------------------------------
+            # restore active attr
+            # -------------------------------------------------
+
+            if transfer_back:
+                me.color_attributes.active_color = dst
+                me.update()
+            else:
+                proxy.data.color_attributes.active_color = dst
+                proxy.data.update()

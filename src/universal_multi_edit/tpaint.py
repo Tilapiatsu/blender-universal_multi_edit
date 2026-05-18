@@ -3,12 +3,13 @@ import bmesh
 from .utils import new_object
 
 from .edit_mode import UME_EditMode
+from .protocol import UME_P_Session
 
 
 class Mode(UME_EditMode):
     name: str = "TEXTURE_PAINT"
 
-    def create_proxy(self, context, objects, session) -> bpy.types.Object:
+    def create_proxy(self, context, objects, session: UME_P_Session) -> bpy.types.Object:
         mesh = bpy.data.meshes.new("UME_TPaint")
         bm = bmesh.new()
 
@@ -64,5 +65,27 @@ class Mode(UME_EditMode):
 
         return proxy
 
-    def transfer_back(self, context, session) -> None:
-        pass  # texture paint = destructive paint, no need
+    def transfer_back(self, context, session: UME_P_Session) -> None:
+        pass
+        # proxy = session.proxy
+        #
+        # if not proxy:
+        #     return
+        #
+        # # -----------------------------------------------------
+        # # force image updates
+        # # -----------------------------------------------------
+        #
+        # for mat in proxy.data.materials:
+        #     if not mat:
+        #         continue
+        #
+        #     if not mat.use_nodes:
+        #         continue
+        #
+        #     for node in mat.node_tree.nodes:
+        #         if node.type == "TEX_IMAGE":
+        #             img = node.image
+        #
+        #             if img:
+        #                 img.update()

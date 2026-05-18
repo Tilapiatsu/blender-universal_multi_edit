@@ -1,13 +1,13 @@
 from __future__ import annotations
 import bpy
 import uuid
-from .core import UME_EditModeState
 from typing import Union
+from .protocol import UME_P_Session, UME_P_EditModeState
 
 
-class UME_Session:
+class UME_Session(UME_P_Session):
     mode: Union[str, None]
-    state: Union[UME_EditModeState, None]
+    state: Union[UME_P_EditModeState, None]
 
     def __init__(self):
         self.id = str(uuid.uuid4())
@@ -20,6 +20,7 @@ class UME_Session:
         self.data = {}
         self.state = None
         self.monitor_running = False
+        self.topology = {"objects": []}
 
     # -----------------------------------------------------
     # PROXY

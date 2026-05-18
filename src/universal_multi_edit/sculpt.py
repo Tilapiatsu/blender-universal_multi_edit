@@ -2,13 +2,14 @@ import bpy
 import bmesh
 
 from .edit_mode import UME_EditMode
+from .protocol import UME_P_Session
 from .utils import get_proxy_mesh, get_multires, has_shape_keys, apply_shape_key_delta
 
 
 class Mode(UME_EditMode):
     name: str = "SCULPT"
 
-    def create_proxy(self, context, objects, session) -> bpy.types.Object:
+    def create_proxy(self, context, objects: list, session: UME_P_Session) -> bpy.types.Object:
         mesh = bpy.data.meshes.new("UME_ProxyMesh")
         bm = bmesh.new()
 
@@ -18,8 +19,12 @@ class Mode(UME_EditMode):
 
         processed = set()
 
+        self._init_offsets()
+
         for obj in objects:
             mesh_id = obj.data.name_full
+
+            self._store_object_offsets(obj, session)
 
             if mesh_id in processed:
                 instances[mesh_id]["users"].append(obj.name)
@@ -72,6 +77,8 @@ class Mode(UME_EditMode):
             src.free()
             bpy.data.meshes.remove(src_mesh)
 
+            self._apply_offsets(obj)
+
         bm.normal_update()
         bm.to_mesh(mesh)
         bm.free()
@@ -86,8 +93,7 @@ class Mode(UME_EditMode):
 
         return proxy
 
-    def apply_multires_back(self, context, obj, coords, mesh_id, session):
-
+    def apply_multires_back(self, context, obj, coords, mesh_id, session: UME_P_Session):
         original = session.get("multires_cache").get(mesh_id, [])
 
         # no-change detection
@@ -135,6 +141,9 @@ class Mode(UME_EditMode):
         if not proxy:
             return
 
+        self._transfer(context, session, proxy, transfer_back=True)
+
+    def _transfer(self, context, session: UME_P_Session, proxy: bpy.types.Object, transfer_back: bool = True) -> None:
         proxy_verts = proxy.data.vertices
         mapping = session.get("mapping")
         instances = session.get("instances")
