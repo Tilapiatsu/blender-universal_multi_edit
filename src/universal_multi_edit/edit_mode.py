@@ -94,17 +94,27 @@ class UME_EditMode(UME_P_EditMode):
     # ---------------------------------------------------------
 
     def _transfer_vertex_positions(
-        self, src_obj: bpy.types.Object, dst_obj: bpy.types.Object, topo: dict, transfer_back: bool = True
+        self,
+        src_obj: bpy.types.Object,
+        dst_obj: bpy.types.Object,
+        topo: dict,
+        transfer_back: bool = True,
     ):
-        print(src_obj.name, "->", dst_obj.name)
         src_verts = src_obj.data.vertices
         dst_verts = dst_obj.data.vertices
-        inv = dst_obj.matrix_world.inverted()
+
+        src_matrix = src_obj.matrix_world
+        dst_inv = dst_obj.matrix_world.inverted()
 
         for proxy_index, local_index in self._iter_vertex_range(topo):
-            world = src_verts[proxy_index if transfer_back else local_index].co.copy()
-            local = inv @ world
-            dst_verts[local_index if transfer_back else proxy_index].co = local
+            src_index = proxy_index if transfer_back else local_index
+            dst_index = local_index if transfer_back else proxy_index
+
+            # always convert through world space
+            world = src_matrix @ src_verts[src_index].co
+            local = dst_inv @ world
+
+            dst_verts[dst_index].co = local
 
     def _set_vertex_positions(self, src_pos: list, dst_obj: bpy.types.Object, topo: dict, transfer_back: bool = True):
         dst_verts = dst_obj.data.vertices
@@ -115,6 +125,24 @@ class UME_EditMode(UME_P_EditMode):
             dst_verts[local_index if transfer_back else proxy_index].co = src_pos[
                 proxy_index if transfer_back else local_index
             ]
+
+    def _extract_local_positions_from_proxy(
+        self,
+        proxy: bpy.types.Object,
+        dst_obj: bpy.types.Object,
+        topo: dict,
+    ):
+        positions = []
+
+        proxy_matrix = proxy.matrix_world
+        dst_inv = dst_obj.matrix_world.inverted()
+
+        for proxy_index, _local_index in self._iter_vertex_range(topo):
+            world = proxy_matrix @ proxy.data.vertices[proxy_index].co
+            local = dst_inv @ world
+            positions.append(local.copy())
+
+        return positions
 
     # ---------------------------------------------------------
     # TRANSFER FLOAT COLORS
@@ -226,37 +254,73 @@ class UME_EditMode(UME_P_EditMode):
     def _transfer_multires(
         self,
         ctx,
-        src_obj: bpy.types.Object,
+        proxy: bpy.types.Object,
         dst_obj: bpy.types.Object,
         topo,
         multires,
         transfer_back: bool = True,
     ):
-        # NOTE: src_obj = proxy
-        # dst_obj = obj
+        if not transfer_back:
+            return
 
-        eval_dst, _, _ = self._get_evaluated_object(ctx, dst_obj)
-        if not eval_dst:
+        # ----------------------------------------
+        # Extract proxy coords in LOCAL SPACE
+        # ----------------------------------------
+
+        coords = self._extract_local_positions_from_proxy(
+            proxy,
+            dst_obj,
+            topo,
+        )
+
+        # ----------------------------------------
+        # Build evaluated topology mesh
+        # ----------------------------------------
+
+        src_mesh, _, _ = self._get_evaluated_object(ctx, dst_obj)
+
+        if not src_mesh:
             return
-        eval_src, _, _ = self._get_evaluated_object(ctx, src_obj)
-        if not eval_src:
-            return
+
+        reshape_obj = src_mesh
+
         try:
-            self._transfer_vertex_positions(eval_src, eval_dst, topo, transfer_back)
-            ctx.scene.collection.objects.link(eval_dst)
-            ctx.view_layer.update()
+            if len(reshape_obj.data.vertices) != len(coords):
+                print("UME: multires vertex mismatch")
+                return
+
+            # ----------------------------------------
+            # write coords
+            # ----------------------------------------
+
+            for i, co in enumerate(coords):
+                reshape_obj.data.vertices[i].co = co
+
+            reshape_obj.data.update()
+
+            # ----------------------------------------
+            # multires reshape
+            # ----------------------------------------
+
+            ctx.scene.collection.objects.link(reshape_obj)
+
             bpy.ops.object.select_all(action="DESELECT")
-            eval_dst.select_set(True)
+
+            reshape_obj.select_set(True)
             dst_obj.select_set(True)
+
             ctx.view_layer.objects.active = dst_obj
+
             bpy.ops.object.multires_reshape(modifier=multires.name)
-            bpy.data.meshes.remove(eval_dst.data)
+
         except Exception as e:
-            print(e)
+            print("UME multires reshape failed:", e)
+
         finally:
-            pass
-            # eval_dst.to_mesh_clear()
-            # bpy.data.meshes.remove(eval_dst.data)
+            bpy.ops.object.select_all(action="DESELECT")
+
+            if reshape_obj.name in bpy.data.objects:
+                bpy.data.objects.remove(reshape_obj, do_unlink=True)
 
     def _get_multires(self, obj: bpy.types.Object):
         for mod in obj.modifiers:
@@ -283,7 +347,14 @@ class UME_EditMode(UME_P_EditMode):
         eval_obj = obj.evaluated_get(dg)
 
         me = bpy.data.meshes.new_from_object(eval_obj)
-        obj_eval = bpy.data.objects.new(name=f"{obj.name}_eval", object_data=me)
+
+        obj_eval = bpy.data.objects.new(
+            name=f"{obj.name}_eval",
+            object_data=me,
+        )
+
+        # CRITICAL
+        obj_eval.matrix_world = obj.matrix_world.copy()
 
         mr.levels = old_view
         mr.render_levels = old_render

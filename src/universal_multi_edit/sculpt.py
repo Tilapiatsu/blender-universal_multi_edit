@@ -30,8 +30,8 @@ class Mode(UME_EditMode):
 
             processed.add(mesh_id)
 
-            src_mesh, is_multires, level = get_proxy_mesh(context, obj)
-            src_obj = obj
+            src_obj, is_multires, level = self._get_evaluated_object(context, obj)
+            src_mesh = src_obj.data
             if is_multires:
                 src_obj = bpy.data.objects.new(f"{obj.name}_orig_eval", object_data=src_mesh)
                 self._store_object_offsets(src_obj, session)
@@ -150,28 +150,42 @@ class Mode(UME_EditMode):
 
         self._transfer(context, session, proxy, transfer_back=True)
 
-    def _transfer(self, context, session: UME_P_Session, proxy: bpy.types.Object, transfer_back: bool = True) -> None:
+    def _transfer(
+        self,
+        context,
+        session: UME_P_Session,
+        proxy: bpy.types.Object,
+        transfer_back: bool = True,
+    ) -> None:
+
         for topo in self._iter_topology_objects(session):
             obj = topo["object"]
 
             if not obj:
                 continue
 
-            if transfer_back:
-                src_obj = proxy
-                dst_obj = obj
-            else:
-                src_obj = obj
-                dst_obj = proxy
+            multires = self._get_multires(obj)
 
-            multires = self._get_multires(dst_obj)
             if multires:
-                self._transfer_multires(context, src_obj, dst_obj, topo, multires, transfer_back)
-            else:
-                self._transfer_vertex_positions(src_obj, dst_obj, topo, transfer_back)
+                self._transfer_multires(
+                    context,
+                    proxy,
+                    obj,
+                    topo,
+                    multires,
+                    transfer_back,
+                )
 
-            dst_obj.data.update()
-        print("removing ", proxy.data.name)
+            else:
+                self._transfer_vertex_positions(
+                    proxy,
+                    obj,
+                    topo,
+                    transfer_back,
+                )
+
+            obj.data.update()
+
         bpy.data.meshes.remove(proxy.data)
 
     def _transfer_bak(
