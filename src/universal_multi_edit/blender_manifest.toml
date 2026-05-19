@@ -1,0 +1,21 @@
+schema_version = "1.0.0"
+
+id = "universal_multi_edit"
+version = "1.0.0"
+name = "Universal Multi Edit"
+tagline = "Brings multiple objects Sculpt / Weight Paint / Vertex Paint / Texture Paint to blender"
+maintainer = "Tilapiatsu <tilapiatsu@hotmail.fr>"
+type = "add-on"
+
+website = "https://github.com/Tilapiatsu/blender-universal_multi_edit"
+
+tags = ["Modeling", "Mesh", "Object", "Sculpt", "Paint"]
+
+blender_version_min = "4.0.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+
+copyright = ["2026 Tilapiatsu"]
+
+[build]
+paths_exclude_pattern = ["/.git/", "__pycache__/", ".gitignore"]

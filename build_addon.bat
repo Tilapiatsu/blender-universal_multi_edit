@@ -1,0 +1,1 @@
+uv run ./scripts/zip_addon.py --addon-id universal_multi_edit

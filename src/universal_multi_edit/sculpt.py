@@ -24,8 +24,6 @@ class Mode(UME_EditMode):
         for obj in objects:
             mesh_id = obj.data.name_full
 
-            self._store_object_offsets(obj, session)
-
             if mesh_id in processed:
                 instances[mesh_id]["users"].append(obj.name)
                 continue
@@ -33,6 +31,16 @@ class Mode(UME_EditMode):
             processed.add(mesh_id)
 
             src_mesh, is_multires, level = get_proxy_mesh(context, obj)
+            src_obj = obj
+            if is_multires:
+                src_obj = bpy.data.objects.new(f"{obj.name}_orig_eval", object_data=src_mesh)
+                self._store_object_offsets(src_obj, session)
+                session.topology["objects"][-1]["object"] = obj
+            else:
+                self._store_object_offsets(src_obj, session)
+            # else:
+            #     src_obj = obj
+            #     self._store_object_offsets(src_obj, session)
 
             instances[mesh_id] = {
                 "source": obj.name,
@@ -75,9 +83,8 @@ class Mode(UME_EditMode):
                     pass
 
             src.free()
+            self._apply_offsets(src_obj)
             bpy.data.meshes.remove(src_mesh)
-
-            self._apply_offsets(obj)
 
         bm.normal_update()
         bm.to_mesh(mesh)
@@ -144,6 +151,32 @@ class Mode(UME_EditMode):
         self._transfer(context, session, proxy, transfer_back=True)
 
     def _transfer(self, context, session: UME_P_Session, proxy: bpy.types.Object, transfer_back: bool = True) -> None:
+        for topo in self._iter_topology_objects(session):
+            obj = topo["object"]
+
+            if not obj:
+                continue
+
+            if transfer_back:
+                src_obj = proxy
+                dst_obj = obj
+            else:
+                src_obj = obj
+                dst_obj = proxy
+
+            multires = self._get_multires(dst_obj)
+            if multires:
+                self._transfer_multires(context, src_obj, dst_obj, topo, multires, transfer_back)
+            else:
+                self._transfer_vertex_positions(src_obj, dst_obj, topo, transfer_back)
+
+            dst_obj.data.update()
+        print("removing ", proxy.data.name)
+        bpy.data.meshes.remove(proxy.data)
+
+    def _transfer_bak(
+        self, context, session: UME_P_Session, proxy: bpy.types.Object, transfer_back: bool = True
+    ) -> None:
         proxy_verts = proxy.data.vertices
         mapping = session.get("mapping")
         instances = session.get("instances")

@@ -2,6 +2,7 @@ import bpy
 from typing import Protocol
 
 from .protocol import UME_P_Session, UME_P_EditMode
+from .utils import get_multires
 
 
 class UME_EditMode(UME_P_EditMode):
@@ -93,15 +94,27 @@ class UME_EditMode(UME_P_EditMode):
     # ---------------------------------------------------------
 
     def _transfer_vertex_positions(
-        self, proxy_me: bpy.types.Mesh, dst_me: bpy.types.Mesh, topo: dict, transfer_back: bool = True
+        self, src_obj: bpy.types.Object, dst_obj: bpy.types.Object, topo: dict, transfer_back: bool = True
     ):
-        proxy_verts = proxy_me.vertices
-        dst_verts = dst_me.vertices
+        print(src_obj.name, "->", dst_obj.name)
+        src_verts = src_obj.data.vertices
+        dst_verts = dst_obj.data.vertices
+        inv = dst_obj.matrix_world.inverted()
 
         for proxy_index, local_index in self._iter_vertex_range(topo):
-            dst_verts[local_index if transfer_back else proxy_index].co = proxy_verts[
+            world = src_verts[proxy_index if transfer_back else local_index].co.copy()
+            local = inv @ world
+            dst_verts[local_index if transfer_back else proxy_index].co = local
+
+    def _set_vertex_positions(self, src_pos: list, dst_obj: bpy.types.Object, topo: dict, transfer_back: bool = True):
+        dst_verts = dst_obj.data.vertices
+
+        for proxy_index, local_index in self._iter_vertex_range(topo):
+            print(src_pos[proxy_index if transfer_back else local_index])
+
+            dst_verts[local_index if transfer_back else proxy_index].co = src_pos[
                 proxy_index if transfer_back else local_index
-            ].co
+            ]
 
     # ---------------------------------------------------------
     # TRANSFER FLOAT COLORS
@@ -208,40 +221,74 @@ class UME_EditMode(UME_P_EditMode):
         # update basis
         # -----------------------------------------------------
 
-        self._transfer_vertex_positions(proxy_me, obj.data, topo, transfer_back)
+        self._transfer_vertex_positions(proxy_me, obj, topo, transfer_back)
 
-    def _transfer_multires(self, ctx, proxy_me, obj, topo, multires, transfer_back: bool = True):
-        depsgraph = ctx.evaluated_depsgraph_get()
-        if transfer_back:
-            eval_obj = obj.evaluated_get(depsgraph)
-        else:
-            eval_obj = proxy_me.evaluated_get(depsgraph)
+    def _transfer_multires(
+        self,
+        ctx,
+        src_obj: bpy.types.Object,
+        dst_obj: bpy.types.Object,
+        topo,
+        multires,
+        transfer_back: bool = True,
+    ):
+        # NOTE: src_obj = proxy
+        # dst_obj = obj
 
-        eval_me = eval_obj.to_mesh()
-
+        eval_dst, _, _ = self._get_evaluated_object(ctx, dst_obj)
+        if not eval_dst:
+            return
+        eval_src, _, _ = self._get_evaluated_object(ctx, src_obj)
+        if not eval_src:
+            return
         try:
-            # -----------------------------------------
-            # copy proxy coords into evaluated mesh
-            # -----------------------------------------
-
-            for proxy_vert, local_vert in self._iter_vertex_range(topo):
-                if transfer_back:
-                    eval_me.vertices[local_vert].co = proxy_me.vertices[proxy_vert].co
-                else:
-                    eval_me.vertices[proxy_vert].co = obj.data.vertices[local_vert].co
-
-            # -----------------------------------------
-            # reshape multires
-            # -----------------------------------------
-
-            temp = bpy.data.objects.new("UME_TEMP", eval_me)
-            ctx.scene.collection.objects.link(temp)
+            self._transfer_vertex_positions(eval_src, eval_dst, topo, transfer_back)
+            ctx.scene.collection.objects.link(eval_dst)
             ctx.view_layer.update()
             bpy.ops.object.select_all(action="DESELECT")
-            temp.select_set(True)
-            ctx.view_layer.objects.active = temp
+            eval_dst.select_set(True)
+            dst_obj.select_set(True)
+            ctx.view_layer.objects.active = dst_obj
             bpy.ops.object.multires_reshape(modifier=multires.name)
-            bpy.data.objects.remove(temp, do_unlink=True)
-
+            bpy.data.meshes.remove(eval_dst.data)
+        except Exception as e:
+            print(e)
         finally:
-            eval_obj.to_mesh_clear()
+            pass
+            # eval_dst.to_mesh_clear()
+            # bpy.data.meshes.remove(eval_dst.data)
+
+    def _get_multires(self, obj: bpy.types.Object):
+        for mod in obj.modifiers:
+            if mod.type == "MULTIRES":
+                return mod
+        print("NOT MULTIRES")
+        return None
+
+    def _get_evaluated_object(self, context, obj: bpy.types.Object):
+        mr = get_multires(obj)
+
+        if mr is None:
+            return obj, False, 0
+
+        old_view = mr.levels
+        old_render = mr.render_levels
+
+        level = mr.sculpt_levels
+
+        mr.levels = level
+        mr.render_levels = level
+
+        dg = context.evaluated_depsgraph_get()
+        eval_obj = obj.evaluated_get(dg)
+
+        me = bpy.data.meshes.new_from_object(eval_obj)
+        obj_eval = bpy.data.objects.new(name=f"{obj.name}_eval", object_data=me)
+
+        mr.levels = old_view
+        mr.render_levels = old_render
+
+        return obj_eval, True, level
+
+    def _has_shape_keys(self, obj: bpy.types.Mesh) -> bool:
+        return obj.data.shape_keys and len(obj.data.shape_keys.key_blocks) > 0

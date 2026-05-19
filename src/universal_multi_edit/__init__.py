@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Universal Multi Edit",
     "author": "Tilapiatsu",
-    "version": (4, 5, 0),
+    "version": (1, 0, 0),
     "blender": (4, 0, 0),
     "location": "Automatic on mode switch",
     "description": "Multi-object Sculpt / Vertex Paint / Texture Paint workflows",
