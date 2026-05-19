@@ -326,7 +326,6 @@ class UME_EditMode(UME_P_EditMode):
         for mod in obj.modifiers:
             if mod.type == "MULTIRES":
                 return mod
-        print("NOT MULTIRES")
         return None
 
     def _get_evaluated_object(self, context, obj: bpy.types.Object):
@@ -353,7 +352,6 @@ class UME_EditMode(UME_P_EditMode):
             object_data=me,
         )
 
-        # CRITICAL
         obj_eval.matrix_world = obj.matrix_world.copy()
 
         mr.levels = old_view
