@@ -1,8 +1,9 @@
+from typing import Tuple
 import bpy
-from typing import Protocol
 
 from .protocol import UME_P_Session, UME_P_EditMode
-from .utils import get_multires
+from .safe_object import UME_SafeObject
+from .utils import get_multires, select_all
 
 
 class UME_EditMode(UME_P_EditMode):
@@ -11,20 +12,18 @@ class UME_EditMode(UME_P_EditMode):
     face_offset: int
     loop_offset: int
 
-    def create_proxy(self, context, objects, session: UME_P_Session) -> bpy.types.Object: ...
+    def create_proxy(self, context, objects: list[UME_SafeObject], session: UME_P_Session) -> UME_SafeObject: ...
 
     def transfer_back(self, context, session: UME_P_Session) -> None: ...
 
-    def _transfer(
-        self, context, session: UME_P_Session, proxy: bpy.types.Object, transfer_back: bool = True
-    ) -> None: ...
+    def _transfer(self, context, session: UME_P_Session, proxy: UME_SafeObject, transfer_back: bool = True) -> None: ...
 
     def _init_offsets(self) -> None:
         self.vert_offset = 0
         self.face_offset = 0
         self.loop_offset = 0
 
-    def _store_object_offsets(self, obj: bpy.types.Object, session) -> None:
+    def _store_object_offsets(self, obj: UME_SafeObject, session) -> None:
         obj_topology = {
             "object": obj,
             "vert_start": self.vert_offset,
@@ -37,7 +36,9 @@ class UME_EditMode(UME_P_EditMode):
 
         session.topology["objects"].append(obj_topology)
 
-    def _apply_offsets(self, obj) -> None:
+    def _apply_offsets(self, obj: UME_SafeObject) -> None:
+        if not obj.object:
+            return
         self.vert_offset += len(obj.data.vertices)
         self.face_offset += len(obj.data.polygons)
         self.loop_offset += len(obj.data.loops)
@@ -95,11 +96,14 @@ class UME_EditMode(UME_P_EditMode):
 
     def _transfer_vertex_positions(
         self,
-        src_obj: bpy.types.Object,
-        dst_obj: bpy.types.Object,
+        src_obj: UME_SafeObject,
+        dst_obj: UME_SafeObject,
         topo: dict,
         transfer_back: bool = True,
     ):
+        if not src_obj.object or not dst_obj.object:
+            return
+
         src_verts = src_obj.data.vertices
         dst_verts = dst_obj.data.vertices
 
@@ -116,7 +120,10 @@ class UME_EditMode(UME_P_EditMode):
 
             dst_verts[dst_index].co = local
 
-    def _set_vertex_positions(self, src_pos: list, dst_obj: bpy.types.Object, topo: dict, transfer_back: bool = True):
+    def _set_vertex_positions(self, src_pos: list, dst_obj: UME_SafeObject, topo: dict, transfer_back: bool = True):
+        if not dst_obj.object:
+            return
+
         dst_verts = dst_obj.data.vertices
 
         for proxy_index, local_index in self._iter_vertex_range(topo):
@@ -128,11 +135,17 @@ class UME_EditMode(UME_P_EditMode):
 
     def _extract_local_positions_from_proxy(
         self,
-        proxy: bpy.types.Object,
-        dst_obj: bpy.types.Object,
+        proxy: UME_SafeObject,
+        dst_obj: UME_SafeObject,
         topo: dict,
     ):
         positions = []
+
+        if not proxy.object or not dst_obj.object:
+            return positions
+        else:
+            proxy = proxy.object
+            dst_obj = dst_obj.object
 
         proxy_matrix = proxy.matrix_world
         dst_inv = dst_obj.matrix_world.inverted()
@@ -199,11 +212,14 @@ class UME_EditMode(UME_P_EditMode):
                 proxy_vert if transfer_back else local_vert
             ].value
 
-    def _transfer_shape_keys(self, proxy_me, obj, topo, transfer_back: bool = True):
+    def _transfer_shape_keys(self, proxy: UME_SafeObject, obj: UME_SafeObject, topo, transfer_back: bool = True):
+        if not proxy.object or not obj.object:
+            return
+
         if transfer_back:
             keys = obj.data.shape_keys
         else:
-            keys = proxy_me.shape_keys
+            keys = proxy.data.shape_keys
 
         if not keys:
             return
@@ -222,9 +238,9 @@ class UME_EditMode(UME_P_EditMode):
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
             if transfer_back:
                 src = obj.data.vertices[local_vert].co
-                dst = proxy_me.vertices[proxy_vert].co
+                dst = proxy.data.vertices[proxy_vert].co
             else:
-                src = proxy_me.data.vertices[proxy_vert].co
+                src = proxy.data.vertices[proxy_vert].co
                 dst = obj.data.vertices[local_vert].co
 
             deltas.append(dst - src)
@@ -249,18 +265,21 @@ class UME_EditMode(UME_P_EditMode):
         # update basis
         # -----------------------------------------------------
 
-        self._transfer_vertex_positions(proxy_me, obj, topo, transfer_back)
+        self._transfer_vertex_positions(proxy, obj, topo, transfer_back)
 
     def _transfer_multires(
         self,
         ctx,
-        proxy: bpy.types.Object,
-        dst_obj: bpy.types.Object,
+        proxy: UME_SafeObject,
+        dst_obj: UME_SafeObject,
         topo,
         multires,
         transfer_back: bool = True,
     ):
         if not transfer_back:
+            return
+
+        if not proxy.object or not dst_obj.object:
             return
 
         # ----------------------------------------
@@ -302,14 +321,16 @@ class UME_EditMode(UME_P_EditMode):
             # multires reshape
             # ----------------------------------------
 
-            ctx.scene.collection.objects.link(reshape_obj)
+            ctx.scene.collection.objects.link(reshape_obj.object)
 
-            bpy.ops.object.select_all(action="DESELECT")
+            select_all(False)
+            # bpy.ops.object.select_all(action="DESELECT")
 
             reshape_obj.select_set(True)
             dst_obj.select_set(True)
 
-            ctx.view_layer.objects.active = dst_obj
+            if dst_obj.object:
+                ctx.view_layer.objects.active = dst_obj.object
 
             bpy.ops.object.multires_reshape(modifier=multires.name)
 
@@ -317,18 +338,19 @@ class UME_EditMode(UME_P_EditMode):
             print("UME multires reshape failed:", e)
 
         finally:
-            bpy.ops.object.select_all(action="DESELECT")
+            select_all(False)
+            # bpy.ops.object.select_all(action="DESELECT")
 
-            if reshape_obj.name in bpy.data.objects:
-                bpy.data.objects.remove(reshape_obj, do_unlink=True)
+            if reshape_obj.object and reshape_obj.name in bpy.data.objects:
+                bpy.data.objects.remove(reshape_obj.object, do_unlink=True)
 
-    def _get_multires(self, obj: bpy.types.Object):
+    def _get_multires(self, obj: UME_SafeObject):
         for mod in obj.modifiers:
             if mod.type == "MULTIRES":
                 return mod
         return None
 
-    def _get_evaluated_object(self, context, obj: bpy.types.Object):
+    def _get_evaluated_object(self, context, obj: UME_SafeObject) -> Tuple[UME_SafeObject, bool, int]:
         mr = get_multires(obj)
 
         if mr is None:
@@ -357,7 +379,7 @@ class UME_EditMode(UME_P_EditMode):
         mr.levels = old_view
         mr.render_levels = old_render
 
-        return obj_eval, True, level
+        return UME_SafeObject(obj_eval), True, level
 
     def _has_shape_keys(self, obj: bpy.types.Mesh) -> bool:
         return obj.data.shape_keys and len(obj.data.shape_keys.key_blocks) > 0

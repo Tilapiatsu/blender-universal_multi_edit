@@ -1,4 +1,7 @@
 import bpy, bmesh
+from .safe_object import (
+    UME_SafeObject,
+)
 
 from .protocol import UME_P_Session
 from .edit_mode import UME_EditMode
@@ -52,22 +55,27 @@ def _ensure_proxy_attr(me: bpy.types.Mesh) -> bpy.types.AttributeGroupMesh:
 class Mode(UME_EditMode):
     name: str = "VERTEX_PAINT"
 
-    def create_proxy(self, context, objects, session: UME_P_Session) -> bpy.types.Object:
+    def create_proxy(self, context, objects: list[UME_SafeObject], session: UME_P_Session) -> bpy.types.Object:
         me = bpy.data.meshes.new("UME_VPaint")
         bm = bmesh.new()
+        if not session:
+            return
         session.set("map", [])
         session.set("attr_meta", {})
 
         self._init_offsets()
 
         for obj in objects:
+            if not obj.object:
+                continue
+
             self._store_object_offsets(obj, session)
             src = bmesh.new()
-            src.from_mesh(obj.data)
-            src.transform(obj.matrix_world)
+            src.from_mesh(obj.object.data)
+            src.transform(obj.object.matrix_world)
             src.faces.ensure_lookup_table()
             src.verts.ensure_lookup_table()
-            attr = obj.data.color_attributes.active_color if obj.data.color_attributes else None
+            attr = obj.object.data.color_attributes.active_color if obj.object.data.color_attributes else None
 
             if attr:
                 session["attr_meta"][obj.name] = {
@@ -116,19 +124,25 @@ class Mode(UME_EditMode):
         _ensure_proxy_attr(me)
         # write colors after mesh exists
 
-        self._transfer(context, session, proxy, transfer_back=False)
+        session.proxy = proxy
+        self._transfer(context, session, session.proxy, transfer_back=False)
 
-        return proxy
+        return session.proxy
 
     def transfer_back(self, context, session: UME_P_Session) -> None:
         proxy = session.proxy
-        if not proxy:
+        if proxy is None:
+            return
+        if not proxy.object:
             return
 
         self._transfer(context, session, proxy, transfer_back=True)
 
-    def _transfer(self, context, session: UME_P_Session, proxy: bpy.types.Object, transfer_back: bool = True) -> None:
-        src = proxy.data.color_attributes.get(NAME)
+    def _transfer(self, context, session: UME_P_Session, proxy: UME_SafeObject, transfer_back: bool = True) -> None:
+        if not proxy.object:
+            return
+
+        src = proxy.object.data.color_attributes.get(NAME)
 
         if not src:
             return
@@ -154,11 +168,11 @@ class Mode(UME_EditMode):
             # -------------------------------------------------
 
             if transfer_back:
-                src = proxy.data.color_attributes.get(NAME)
+                src = proxy.object.data.color_attributes.get(NAME)
                 dst = me.color_attributes.get(attr_name)
             else:
                 src = me.color_attributes.get(attr_name)
-                dst = proxy.data.color_attributes.get(NAME)
+                dst = proxy.object.data.color_attributes.get(NAME)
 
             if not dst:
                 dst = me.color_attributes.new(name=attr_name, type=attr_type, domain=domain)
@@ -181,5 +195,5 @@ class Mode(UME_EditMode):
                 me.color_attributes.active_color = dst
                 me.update()
             else:
-                proxy.data.color_attributes.active_color = dst
-                proxy.data.update()
+                proxy.object.data.color_attributes.active_color = dst
+                proxy.object.data.update()

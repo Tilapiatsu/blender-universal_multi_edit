@@ -19,9 +19,12 @@ class Mode(UME_EditMode):
         mat_index = 0
 
         for obj in objects:
+            if not obj.object:
+                continue
+
             src = bmesh.new()
-            src.from_mesh(obj.data)
-            src.transform(obj.matrix_world)
+            src.from_mesh(obj.object.data)
+            src.transform(obj.object.matrix_world)
 
             src.verts.ensure_lookup_table()
             src.faces.ensure_lookup_table()
@@ -38,7 +41,7 @@ class Mode(UME_EditMode):
             for f in src.faces:
                 nf = bm.faces.new([vmap[v] for v in f.verts])
 
-                mat = obj.material_slots[f.material_index].material
+                mat = obj.object.material_slots[f.material_index].material
                 if mat not in mat_lookup:
                     mat_lookup[mat] = mat_index
                     mat_index += 1
@@ -60,10 +63,10 @@ class Mode(UME_EditMode):
         for mat, _ in ordered:
             proxy.data.materials.append(mat)
 
-        session["proxy"] = proxy.name
+        session.proxy = proxy
         session["mat_lookup"] = mat_lookup
 
-        return proxy
+        return session.proxy
 
     def transfer_back(self, context, session: UME_P_Session) -> None:
         pass

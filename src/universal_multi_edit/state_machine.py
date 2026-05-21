@@ -5,9 +5,8 @@ from dataclasses import dataclass
 
 from .edit_mode import UME_EditMode
 from .core import SUPPORTED, MODE_MODULES
-
-
 from .protocol import UME_P_Core, UME_P_EditModeState, UME_State
+from .utils import select_all
 
 
 @dataclass
@@ -48,25 +47,27 @@ class EditState(UME_P_EditModeState):
                 return
 
             proxy = self.module.create_proxy(context, list(session.iter_objects()), session)
-            session.proxy_name = proxy.name
 
             # -------------------------------------
             # hide originals
             # -------------------------------------
 
             for obj in session.iter_objects():
+                if not obj.object:
+                    continue
                 obj.hide_set(True)
 
             # -------------------------------------
             # activate proxy
             # -------------------------------------
 
-            bpy.ops.object.select_all(action="DESELECT")
+            select_all(False)
+            # bpy.ops.object.select_all(action="DESELECT")
 
             proxy.hide_set(False)
             proxy.select_set(True)
 
-            context.view_layer.objects.active = proxy
+            context.view_layer.objects.active = proxy.object
 
             # -------------------------------------
             # switch mode
@@ -128,8 +129,7 @@ class EditState(UME_P_EditModeState):
         # -----------------------------------------
         # proxy deleted manually
         # -----------------------------------------
-
-        if not proxy:
+        if not proxy.object:
             try:
                 self.exit(ctx)
             except Exception as e:
@@ -153,4 +153,15 @@ class EditState(UME_P_EditModeState):
 
             return None
 
+        self.session_recorvery(ctx)
+
         return 0.1
+
+    def session_recorvery(self, context):
+        session = self.core.session
+        if not session:
+            return
+
+        if session and session.need_recovery:
+            session.need_recovery = False
+            self.core.cleanup_session(context)

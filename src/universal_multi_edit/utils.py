@@ -1,5 +1,4 @@
 import bpy
-from .session import UME_Session
 
 
 def new_object(context, name: str, mesh: bpy.types.Mesh):
@@ -81,48 +80,10 @@ def ensure_active_color_layer(mesh: bpy.types.Mesh, name: str):
     return layer
 
 
-def deselect_all():
-    for o in bpy.context.selected_objects:
-        o.select_set(False)
-
-
-def topology_object_from_vertex(session: UME_Session, proxy_vert_index: int):
-
-    for topo in session.topology["objects"]:
-        start = topo["vert_start"]
-        end = start + topo["vert_count"]
-
-        if start <= proxy_vert_index < end:
-            local_index = proxy_vert_index - start
-
-            return topo["object"], local_index
-
-    return None, None
-
-
-def topology_object_from_face(session: UME_Session, proxy_face_index: int):
-
-    for topo in session.topology["objects"]:
-        start = topo["face_start"]
-        end = start + topo["face_count"]
-
-        if start <= proxy_face_index < end:
-            local_index = proxy_face_index - start
-
-            return topo["object"], local_index
-
-    return None, None
-
-
-def topology_object_from_loop(session: UME_Session, proxy_loop_index: int):
-
-    for topo in session.topology["objects"]:
-        start = topo["loop_start"]
-        end = start + topo["loop_count"]
-
-        if start <= proxy_loop_index < end:
-            local_index = proxy_loop_index - start
-
-            return topo["object"], local_index
-
-    return None, None
+def select_all(select: bool):
+    if not select:
+        for o in bpy.context.selected_objects:
+            o.select_set(select)
+    else:
+        for o in bpy.context.objects:
+            o.select_set(select)

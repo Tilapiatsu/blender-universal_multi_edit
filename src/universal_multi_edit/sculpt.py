@@ -1,5 +1,8 @@
 import bpy
 import bmesh
+from .safe_object import (
+    UME_SafeObject,
+)
 
 from .edit_mode import UME_EditMode
 from .protocol import UME_P_Session
@@ -9,7 +12,7 @@ from .utils import get_proxy_mesh, get_multires, has_shape_keys, apply_shape_key
 class Mode(UME_EditMode):
     name: str = "SCULPT"
 
-    def create_proxy(self, context, objects: list, session: UME_P_Session) -> bpy.types.Object:
+    def create_proxy(self, context, objects: list[UME_SafeObject], session: UME_P_Session) -> UME_SafeObject:
         mesh = bpy.data.meshes.new("UME_ProxyMesh")
         bm = bmesh.new()
 
@@ -22,7 +25,9 @@ class Mode(UME_EditMode):
         self._init_offsets()
 
         for obj in objects:
-            mesh_id = obj.data.name_full
+            if not obj.object:
+                continue
+            mesh_id = obj.object.data.name_full
 
             if mesh_id in processed:
                 instances[mesh_id]["users"].append(obj.name)
@@ -33,14 +38,11 @@ class Mode(UME_EditMode):
             src_obj, is_multires, level = self._get_evaluated_object(context, obj)
             src_mesh = src_obj.data
             if is_multires:
-                src_obj = bpy.data.objects.new(f"{obj.name}_orig_eval", object_data=src_mesh)
+                src_obj = UME_SafeObject(bpy.data.objects.new(f"{obj.name}_orig_eval", object_data=src_mesh))
                 self._store_object_offsets(src_obj, session)
                 session.topology["objects"][-1]["object"] = obj
             else:
                 self._store_object_offsets(src_obj, session)
-            # else:
-            #     src_obj = obj
-            #     self._store_object_offsets(src_obj, session)
 
             instances[mesh_id] = {
                 "source": obj.name,
@@ -90,62 +92,21 @@ class Mode(UME_EditMode):
         bm.to_mesh(mesh)
         bm.free()
 
-        proxy = bpy.data.objects.new("UME_Proxy", mesh)
-        context.scene.collection.objects.link(proxy)
+        proxy = UME_SafeObject(bpy.data.objects.new("UME_Proxy", mesh))
+        context.scene.collection.objects.link(proxy.object)
 
-        session.set("proxy_name", proxy.name)
+        session.proxy = proxy
         session.set("mapping", mapping)
         session.set("instances", instances)
         session.set("multires_cache", multires_cache)
 
-        return proxy
-
-    def apply_multires_back(self, context, obj, coords, mesh_id, session: UME_P_Session):
-        original = session.get("multires_cache").get(mesh_id, [])
-
-        # no-change detection
-        if len(original) == len(coords):
-            changed = False
-            for a, b in zip(original, coords):
-                if (a - b).length > 0.00001:
-                    changed = True
-                    break
-            if not changed:
-                return
-
-        # Build clean reshape source from evaluated topology
-        src_mesh, _, _ = get_proxy_mesh(context, obj)
-
-        if len(src_mesh.vertices) != len(coords):
-            bpy.data.meshes.remove(src_mesh)
-            print("UME: multires vertex mismatch")
-            return
-
-        for i, v in enumerate(src_mesh.vertices):
-            v.co = coords[i]
-
-        src_obj = bpy.data.objects.new("UME_ReshapeSource", src_mesh)
-        context.scene.collection.objects.link(src_obj)
-
-        bpy.ops.object.select_all(action="DESELECT")
-
-        obj.select_set(True)
-        src_obj.select_set(True)
-
-        context.view_layer.objects.active = obj
-
-        mr = get_multires(obj)
-
-        try:
-            bpy.ops.object.multires_reshape(modifier=mr.name)
-        except Exception as e:
-            print("UME reshape failed:", e)
-
-        bpy.data.objects.remove(src_obj, do_unlink=True)
+        return session.proxy
 
     def transfer_back(self, context, session) -> None:
-        proxy = bpy.data.objects.get(session.get("proxy_name"))
+        proxy = session.proxy
         if not proxy:
+            return
+        if not proxy.object:
             return
 
         self._transfer(context, session, proxy, transfer_back=True)
@@ -154,14 +115,14 @@ class Mode(UME_EditMode):
         self,
         context,
         session: UME_P_Session,
-        proxy: bpy.types.Object,
+        proxy: UME_SafeObject,
         transfer_back: bool = True,
     ) -> None:
 
         for topo in self._iter_topology_objects(session):
             obj = topo["object"]
 
-            if not obj:
+            if not obj.object or not proxy.object:
                 continue
 
             multires = self._get_multires(obj)
@@ -187,64 +148,3 @@ class Mode(UME_EditMode):
             obj.data.update()
 
         bpy.data.meshes.remove(proxy.data)
-
-    def _transfer_bak(
-        self, context, session: UME_P_Session, proxy: bpy.types.Object, transfer_back: bool = True
-    ) -> None:
-        proxy_verts = proxy.data.vertices
-        mapping = session.get("mapping")
-        instances = session.get("instances")
-
-        grouped = {}
-
-        for pidx, (mesh_id, vidx) in enumerate(mapping):
-            grouped.setdefault(mesh_id, []).append((pidx, vidx))
-
-        for mesh_id, items in grouped.items():
-            data = instances[mesh_id]
-            obj = bpy.data.objects.get(data["source"])
-
-            if not obj:
-                continue
-
-            inv = obj.matrix_world.inverted()
-
-            # ------------------------------------
-            # MULTIRES
-            # ------------------------------------
-            if data["multires"]:
-                coords = []
-
-                for proxy_idx, src_idx in items:
-                    world = proxy_verts[proxy_idx].co.copy()
-                    local = inv @ world
-                    coords.append(local)
-
-                self.apply_multires_back(context, obj, coords, mesh_id, session)
-                continue
-
-            # ------------------------------------
-            # NORMAL
-            # ------------------------------------
-            old_pos = {}
-            new_pos = {}
-
-            for proxy_idx, src_idx in items:
-                world = proxy_verts[proxy_idx].co.copy()
-                local = inv @ world
-
-                old_pos[src_idx] = obj.data.vertices[src_idx].co.copy()
-                new_pos[src_idx] = local
-
-            deltas = {}
-
-            for idx in old_pos:
-                deltas[idx] = new_pos[idx] - old_pos[idx]
-
-            if has_shape_keys(obj):
-                apply_shape_key_delta(obj, deltas)
-            else:
-                for idx, co in new_pos.items():
-                    obj.data.vertices[idx].co = co
-
-            obj.data.update()
