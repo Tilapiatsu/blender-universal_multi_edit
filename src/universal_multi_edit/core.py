@@ -211,7 +211,6 @@ def ume_undo_post(scene):
     session = get_session()
 
     if session:
-        print("need recovery")
         session.need_recovery = True
 
 
