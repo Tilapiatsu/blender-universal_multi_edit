@@ -68,6 +68,7 @@ class Mode(UME_EditMode):
         for obj in objects:
             if not obj.object:
                 continue
+
             self._store_object_offsets(obj, session)
             src = bmesh.new()
             src.from_mesh(obj.data)
@@ -75,7 +76,6 @@ class Mode(UME_EditMode):
             src.faces.ensure_lookup_table()
             src.verts.ensure_lookup_table()
             attr = obj.data.color_attributes.active_color if obj.data.color_attributes else None
-
             if attr:
                 session["attr_meta"][obj.name] = {
                     "name": attr.name,
@@ -138,7 +138,7 @@ class Mode(UME_EditMode):
         if not proxy.object:
             return
 
-        src = proxy.object.data.color_attributes.get(NAME)
+        src = proxy.data.color_attributes.get(NAME)
 
         if not src:
             return
@@ -164,14 +164,15 @@ class Mode(UME_EditMode):
             # -------------------------------------------------
 
             if transfer_back:
-                src = proxy.object.data.color_attributes.get(NAME)
+                src = proxy.data.color_attributes.get(NAME)
                 dst = me.color_attributes.get(attr_name)
+                if not dst:
+                    dst = me.color_attributes.new(name=attr_name, type=attr_type, domain=domain)
             else:
                 src = me.color_attributes.get(attr_name)
-                dst = proxy.object.data.color_attributes.get(NAME)
-
-            if not dst:
-                dst = me.color_attributes.new(name=attr_name, type=attr_type, domain=domain)
+                dst = proxy.data.color_attributes.get(NAME)
+                if not src:
+                    src = me.color_attributes.new(name=attr_name, type=attr_type, domain=domain)
 
             # -------------------------------------------------
             # transfer

@@ -27,7 +27,7 @@ class Mode(UME_EditMode):
         for obj in objects:
             if not obj.object:
                 continue
-            mesh_id = obj.object.data.name_full
+            mesh_id = obj.data.name_full
 
             if mesh_id in processed:
                 instances[mesh_id]["users"].append(obj.name)
@@ -42,7 +42,7 @@ class Mode(UME_EditMode):
                 self._store_object_offsets(src_obj, session)
                 session.topology["objects"][-1]["object"] = obj
             else:
-                self._store_object_offsets(src_obj, session)
+                self._store_object_offsets(UME_SafeObject(src_obj), session)
 
             instances[mesh_id] = {
                 "source": obj.name,
@@ -86,7 +86,8 @@ class Mode(UME_EditMode):
 
             src.free()
             self._apply_offsets(src_obj)
-            bpy.data.meshes.remove(src_mesh)
+            if is_multires:
+                bpy.data.meshes.remove(src_mesh)
 
         bm.normal_update()
         bm.to_mesh(mesh)
@@ -116,11 +117,13 @@ class Mode(UME_EditMode):
         proxy: UME_SafeObject,
         transfer_back: bool = True,
     ) -> None:
+        if not proxy.object:
+            return
 
         for topo in self._iter_topology_objects(session):
             obj = topo["object"]
 
-            if not obj.object or not proxy.object:
+            if not obj.object:
                 continue
 
             multires = self._get_multires(obj)
