@@ -62,7 +62,6 @@ class EditState(UME_P_EditModeState):
             # -------------------------------------
 
             select_all(False)
-            # bpy.ops.object.select_all(action="DESELECT")
 
             proxy.hide_set(False)
             proxy.select_set(True)

@@ -23,8 +23,8 @@ class Mode(UME_EditMode):
                 continue
 
             src = bmesh.new()
-            src.from_mesh(obj.object.data)
-            src.transform(obj.object.matrix_world)
+            src.from_mesh(obj.data)
+            src.transform(obj.matrix_world)
 
             src.verts.ensure_lookup_table()
             src.faces.ensure_lookup_table()

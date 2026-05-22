@@ -104,9 +104,7 @@ class Mode(UME_EditMode):
 
     def transfer_back(self, context, session) -> None:
         proxy = session.proxy
-        if not proxy:
-            return
-        if not proxy.object:
+        if not proxy or not proxy.object:
             return
 
         self._transfer(context, session, proxy, transfer_back=True)

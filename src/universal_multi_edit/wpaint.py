@@ -1,6 +1,6 @@
 import bpy, bmesh
 from .safe_object import UME_SafeObject
-from .session import UME_Session
+from .protocol import UME_P_Session
 
 from .edit_mode import UME_EditMode
 
@@ -15,7 +15,7 @@ def active_group(obj: UME_SafeObject):
 class Mode(UME_EditMode):
     name: str = "WEIGHT_PAINT"
 
-    def create_proxy(self, context, objects: list[UME_SafeObject], session) -> bpy.types.Object:
+    def create_proxy(self, context, objects: list[UME_SafeObject], session) -> UME_SafeObject:
         me = bpy.data.meshes.new("UME_WPaint")
         bm = bmesh.new()
         session.set("wpaint_meta", {})
@@ -24,15 +24,15 @@ class Mode(UME_EditMode):
 
         for obj in objects:
             if not obj.object:
-                return
+                continue
 
             self._store_object_offsets(obj, session)
 
             session["wpaint_meta"][obj.name] = {"active_group": active_group(obj)}
             vmap = {}
             src = bmesh.new()
-            src.from_mesh(obj.object.data)
-            src.transform(obj.object.matrix_world)
+            src.from_mesh(obj.data)
+            src.transform(obj.matrix_world)
             for v in src.verts:
                 nv = bm.verts.new(v.co)
                 vmap[v] = nv
@@ -61,15 +61,12 @@ class Mode(UME_EditMode):
 
     def transfer_back(self, context, session) -> None:
         proxy = session.proxy
-
-        if not proxy:
-            return
-        if not proxy.object:
+        if not proxy or not proxy.object:
             return
 
         self._transfer(context, session, proxy, transfer_back=True)
 
-    def _transfer(self, context, session: UME_Session, proxy: UME_SafeObject, transfer_back: bool = True) -> None:
+    def _transfer(self, context, session: UME_P_Session, proxy: UME_SafeObject, transfer_back: bool = True) -> None:
         for topo in self._iter_topology_objects(session):
             obj = topo["object"]
             if not proxy.object:

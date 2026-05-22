@@ -127,8 +127,6 @@ class UME_EditMode(UME_P_EditMode):
         dst_verts = dst_obj.data.vertices
 
         for proxy_index, local_index in self._iter_vertex_range(topo):
-            print(src_pos[proxy_index if transfer_back else local_index])
-
             dst_verts[local_index if transfer_back else proxy_index].co = src_pos[
                 proxy_index if transfer_back else local_index
             ]
@@ -162,7 +160,15 @@ class UME_EditMode(UME_P_EditMode):
     # ---------------------------------------------------------
 
     def _transfer_float_colors(self, src_attr, dst_attr, topo: dict, transfer_back: bool = True):
+        if transfer_back:
+            local_size = len(dst_attr.data)
+            proxy_size = len(src_attr.data)
+        else:
+            local_size = len(src_attr.data)
+            proxy_size = len(dst_attr.data)
         for proxy_loop, local_loop in self._iter_loop_range(topo):
+            if proxy_loop >= proxy_size or local_loop >= local_size:
+                break
             dst_attr.data[local_loop if transfer_back else proxy_loop].color = src_attr.data[
                 proxy_loop if transfer_back else local_loop
             ].color
@@ -172,7 +178,16 @@ class UME_EditMode(UME_P_EditMode):
     # ---------------------------------------------------------
 
     def _transfer_byte_colors(self, src_attr, dst_attr, topo: dict, transfer_back: bool = True):
+        if transfer_back:
+            local_size = len(dst_attr.data)
+            proxy_size = len(src_attr.data)
+        else:
+            local_size = len(src_attr.data)
+            proxy_size = len(dst_attr.data)
+
         for proxy_loop, local_loop in self._iter_loop_range(topo):
+            if proxy_loop >= proxy_size or local_loop >= local_size:
+                break
             dst_attr.data[local_loop if transfer_back else proxy_loop].color_srgb = src_attr.data[
                 proxy_loop if transfer_back else local_loop
             ].color_srgb
@@ -324,7 +339,6 @@ class UME_EditMode(UME_P_EditMode):
             ctx.scene.collection.objects.link(reshape_obj.object)
 
             select_all(False)
-            # bpy.ops.object.select_all(action="DESELECT")
 
             reshape_obj.select_set(True)
             dst_obj.select_set(True)
@@ -339,7 +353,6 @@ class UME_EditMode(UME_P_EditMode):
 
         finally:
             select_all(False)
-            # bpy.ops.object.select_all(action="DESELECT")
 
             if reshape_obj.object and reshape_obj.name in bpy.data.objects:
                 bpy.data.objects.remove(reshape_obj.object, do_unlink=True)
