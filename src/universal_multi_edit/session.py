@@ -67,6 +67,7 @@ class UME_Session(UME_P_Session):
         self.monitor_running = False
         self.topology = {"objects": []}
         self.need_recovery = False
+        self.proxy_undo = False
 
     # -----------------------------------------------------
     # PROXY
@@ -114,7 +115,6 @@ class UME_Session(UME_P_Session):
 
     def restore_scene_state(self, ctx):
         select_all(False)
-        # bpy.ops.object.select_all(action="DESELECT")
 
         for obj, hidden in self.hidden_states.items():
             if obj and obj.object:

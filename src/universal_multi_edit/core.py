@@ -7,10 +7,10 @@ from typing import Union
 
 from .session import UME_Session
 
-from . import sculpt
-from . import vpaint
-from . import wpaint
-from . import tpaint
+from .edit_modes import sculpt
+from .edit_modes import vpaint
+from .edit_modes import wpaint
+from .edit_modes import tpaint
 
 from .protocol import UME_P_Core
 from .safe_object import UME_SafeObject
@@ -79,6 +79,8 @@ class UME_Core(UME_P_Core):
 
     def destroy_session(self):
         self.session = None
+        if bpy.context.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
 
     def cleanup_session(self, ctx):
         if not self.session:
@@ -174,7 +176,9 @@ def validate_session():
 def ume_watcher(scene):
     global CORE
 
-    if CORE.session:
+    session = CORE.session
+
+    if session:
         return
 
     ctx = bpy.context
@@ -196,7 +200,6 @@ def ume_watcher(scene):
 
 @persistent
 def ume_undo_handler(scene):
-
     session = get_session()
 
     if not session:
@@ -207,11 +210,17 @@ def ume_undo_handler(scene):
 
 @persistent
 def ume_undo_post(scene):
-
     session = get_session()
 
-    if session:
-        session.need_recovery = True
+    if not session:
+        return
+
+    session.proxy_undo = True
+
+    if session.proxy:
+        return
+
+    session.need_recovery = True
 
 
 # ---------------------------------------------------------
@@ -223,11 +232,11 @@ def register():
     if ume_watcher not in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.append(ume_watcher)
 
-    if ume_undo_handler not in bpy.apps.handlers.undo_post:
-        bpy.app.handlers.undo_post.append(ume_undo_handler)
+    if ume_undo_handler not in bpy.app.handlers.undo_post:
+        # bpy.app.handlers.undo_post.append(ume_undo_handler)
         bpy.app.handlers.undo_post.append(ume_undo_post)
 
-    if ume_undo_handler not in bpy.apps.handlers.redo_post:
+    if ume_undo_handler not in bpy.app.handlers.redo_post:
         bpy.app.handlers.redo_post.append(ume_undo_handler)
 
 
@@ -235,9 +244,9 @@ def unregister():
     if ume_watcher in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.remove(ume_watcher)
 
-    if ume_undo_handler in bpy.apps.handlers.undo_post:
-        bpy.app.handlers.undo_post.remove(ume_undo_handler)
+    if ume_undo_handler in bpy.app.handlers.undo_post:
+        # bpy.app.handlers.undo_post.remove(ume_undo_handler)
         bpy.app.handlers.undo_post.remove(ume_undo_post)
 
-    if ume_undo_handler in bpy.apps.handlers.redo_post:
+    if ume_undo_handler in bpy.app.handlers.redo_post:
         bpy.app.handlers.redo_post.remove(ume_undo_handler)

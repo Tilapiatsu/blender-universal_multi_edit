@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Protocol, Union
 from dataclasses import dataclass
 
-from .edit_mode import UME_EditMode
+from .edit_modes.edit_mode import UME_EditMode
 from .core import SUPPORTED, MODE_MODULES
 from .protocol import UME_P_Core, UME_P_EditModeState, UME_State
 from .utils import select_all
@@ -74,6 +74,8 @@ class EditState(UME_P_EditModeState):
 
             bpy.ops.object.mode_set(mode=mode)
 
+            bpy.ops.ed.undo_push(message="UME_PROXY_CREATED")
+
             # -------------------------------------
             # start monitor
             # -------------------------------------
@@ -99,7 +101,8 @@ class EditState(UME_P_EditModeState):
             return
 
         try:
-            self.module.transfer_back(context, session)
+            if not session.need_recovery and not session.proxy_undo:
+                self.module.transfer_back(context, session)
 
         except Exception as e:
             print("UME EXIT ERROR:", e)
@@ -125,12 +128,23 @@ class EditState(UME_P_EditModeState):
         ctx = bpy.context
         proxy = session.proxy
 
+        if session.need_recovery:
+            self.session_recorvery(ctx, session)
+            return
+
         # -----------------------------------------
         # proxy deleted manually
         # -----------------------------------------
         if not proxy.object:
             try:
-                self.exit(ctx)
+                if session.proxy_undo:
+                    self.core.cleanup_session(ctx)
+                    bpy.ops.object.mode_set(mode="OBJECT")
+                    self.core.destroy_session()
+
+                else:
+                    self.exit(ctx)
+
             except Exception as e:
                 print("UME MONITOR:", e)
 
@@ -152,15 +166,9 @@ class EditState(UME_P_EditModeState):
 
             return None
 
-        self.session_recorvery(ctx)
-
         return 0.1
 
-    def session_recorvery(self, context):
-        session = self.core.session
-        if not session:
-            return
-
+    def session_recorvery(self, context, session):
         if session and session.need_recovery:
             session.need_recovery = False
             self.core.cleanup_session(context)

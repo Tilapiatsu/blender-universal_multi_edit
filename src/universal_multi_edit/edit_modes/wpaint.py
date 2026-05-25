@@ -1,6 +1,6 @@
 import bpy, bmesh
-from .safe_object import UME_SafeObject
-from .protocol import UME_P_Session
+from ..safe_object import UME_SafeObject
+from ..protocol import UME_P_Session
 
 from .edit_mode import UME_EditMode
 

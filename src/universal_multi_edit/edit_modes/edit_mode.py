@@ -1,9 +1,9 @@
 from typing import Tuple
 import bpy
 
-from .protocol import UME_P_Session, UME_P_EditMode
-from .safe_object import UME_SafeObject
-from .utils import get_multires, select_all
+from ..protocol import UME_P_Session, UME_P_EditMode
+from ..safe_object import UME_SafeObject
+from ..utils import get_multires, select_all
 
 
 class UME_EditMode(UME_P_EditMode):

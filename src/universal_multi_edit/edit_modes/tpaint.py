@@ -1,9 +1,9 @@
 import bpy
 import bmesh
-from .utils import new_object
+from ..utils import new_object
 
 from .edit_mode import UME_EditMode
-from .protocol import UME_P_Session
+from ..protocol import UME_P_Session
 
 
 class Mode(UME_EditMode):

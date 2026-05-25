@@ -1,12 +1,11 @@
 import bpy
 import bmesh
-from .safe_object import (
+from ..safe_object import (
     UME_SafeObject,
 )
 
 from .edit_mode import UME_EditMode
-from .protocol import UME_P_Session
-from .utils import get_proxy_mesh, get_multires, has_shape_keys, apply_shape_key_delta
+from ..protocol import UME_P_Session
 
 
 class Mode(UME_EditMode):
