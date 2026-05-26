@@ -125,7 +125,7 @@ class UME_EditMode(UME_P_EditMode):
             new_pos[dst_index] = local
 
             dst_verts[dst_index].co = local
-        
+
         # deltas = {}
 
         # for idx in old_pos:
@@ -238,20 +238,23 @@ class UME_EditMode(UME_P_EditMode):
             return
 
         if transfer_back:
-            keys = obj.data.shape_keys
+            src_obj = proxy
+            dst_obj = obj
+            src_keys = src_obj.data.shape_keys
+            dst_keys = dst_obj.data.shape_keys
         else:
-            keys = proxy.data.shape_keys
+            src_obj = obj
+            dst_obj = proxy
+            src_keys = src_obj.data.shape_keys
+            dst_keys = dst_obj.data.shape_keys
 
-        if not keys:
+        if not src_keys:
             return
 
-        basis = keys.reference_key
+        basis = src_keys.reference_key
 
         if not basis:
             return
-
-        src_obj = proxy if transfer_back else obj
-        dst_obj = obj if transfer_back else proxy
 
         src_matrix = src_obj.matrix_world
         dst_inv = dst_obj.matrix_world.inverted()
@@ -264,7 +267,7 @@ class UME_EditMode(UME_P_EditMode):
 
         src_verts = src_obj.data.vertices
         dst_verts = dst_obj.data.vertices
-        
+
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
             src_index = proxy_vert if transfer_back else local_vert
             dst_index = local_vert if transfer_back else proxy_vert
@@ -280,23 +283,26 @@ class UME_EditMode(UME_P_EditMode):
         # apply to relative keys
         # -----------------------------------------------------
 
-        for key in keys.key_blocks:
-            if key == basis:
-                continue
-
-            # absolute shape keys:
-            # skip entirely
+        for key in src_keys.key_blocks:
+            # absolute shape keys           # skip entirely
             if not key.relative_key:
                 continue
 
-            for i, delta in enumerate(deltas):
-                key.data[i].co += delta
+            # create shape key if missing
+            if not dst_keys or key.name not in dst_keys.key_blocks:
+                dst_obj.shape_key_add(name=key.name)
+                dst_keys = dst_obj.data.shape_keys
+
+            if key == basis:
+                continue
+
+            self._set_shape_key_delta(
+                topo, transfer_back, key.data, dst_keys.key_blocks[key.name].data, src_matrix, dst_inv
+            )
 
         # -----------------------------------------------------
         # update basis
         # -----------------------------------------------------
-
-        self._transfer_vertex_positions(proxy, obj, topo, transfer_back)
 
     def _transfer_multires(
         self,
@@ -412,7 +418,7 @@ class UME_EditMode(UME_P_EditMode):
 
     def _has_shape_keys(self, obj: bpy.types.Object) -> bool:
         return obj.data.shape_keys and len(obj.data.shape_keys.key_blocks) > 0
-    
+
     def _apply_shape_key_delta(self, obj: bpy.types.Object, deltas: dict):
         keys = obj.data.shape_keys.key_blocks
 
@@ -424,3 +430,14 @@ class UME_EditMode(UME_P_EditMode):
             kb = keys[0]
             for idx, delta in deltas.items():
                 kb.data[idx].co += delta
+
+    def _set_shape_key_delta(self, topo, transfer_back: bool, src_verts, dst_verts, src_matrix, dst_inv):
+        for proxy_vert, local_vert in self._iter_vertex_range(topo):
+            src_index = proxy_vert if transfer_back else local_vert
+            dst_index = local_vert if transfer_back else proxy_vert
+            src_pos = src_verts[src_index].co
+
+            world = src_matrix @ src_pos
+            local = dst_inv @ world
+
+            dst_verts[dst_index].co = local

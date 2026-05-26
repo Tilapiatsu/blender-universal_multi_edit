@@ -99,6 +99,7 @@ class Mode(UME_EditMode):
         for topo in self._iter_topology_objects(session):
             obj = topo["object"]
             if self._has_shape_keys(obj) and not self._get_multires(obj):
+                print(f"transfer {obj.name}'s shapekeys to proxy")
                 self._transfer_shape_keys(proxy, obj, topo, transfer_back=False)
 
         session.proxy = proxy
@@ -145,7 +146,7 @@ class Mode(UME_EditMode):
 
             else:
                 if self._has_shape_keys(obj):
-                    self._transfer_shape_keys(proxy, obj, topo, self.transfer_back)
+                    self._transfer_shape_keys(proxy, obj, topo, transfer_back)
                 else:
                     self._transfer_vertex_positions(
                         proxy,
