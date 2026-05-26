@@ -110,6 +110,9 @@ class UME_EditMode(UME_P_EditMode):
         src_matrix = src_obj.matrix_world
         dst_inv = dst_obj.matrix_world.inverted()
 
+        old_pos = {}
+        new_pos = {}
+
         for proxy_index, local_index in self._iter_vertex_range(topo):
             src_index = proxy_index if transfer_back else local_index
             dst_index = local_index if transfer_back else proxy_index
@@ -118,18 +121,19 @@ class UME_EditMode(UME_P_EditMode):
             world = src_matrix @ src_verts[src_index].co
             local = dst_inv @ world
 
-            dst_verts[dst_index].co = local
+            old_pos[dst_index] = dst_verts[dst_index].co
+            new_pos[dst_index] = local
+        
+        deltas = {}
 
-    def _set_vertex_positions(self, src_pos: list, dst_obj: UME_SafeObject, topo: dict, transfer_back: bool = True):
-        if not dst_obj.object:
-            return
+        for idx in old_pos:
+            deltas[idx] = new_pos[idx] - old_pos[idx]
 
-        dst_verts = dst_obj.data.vertices
-
-        for proxy_index, local_index in self._iter_vertex_range(topo):
-            dst_verts[local_index if transfer_back else proxy_index].co = src_pos[
-                proxy_index if transfer_back else local_index
-            ]
+        if self._has_shape_keys(dst_obj):
+            self._apply_shape_key_delta(dst_obj, deltas)
+        else:
+            for idx, co in new_pos.items():
+                dst_verts[idx].co = co
 
     def _extract_local_positions_from_proxy(
         self,
@@ -396,3 +400,15 @@ class UME_EditMode(UME_P_EditMode):
 
     def _has_shape_keys(self, obj: bpy.types.Mesh) -> bool:
         return obj.data.shape_keys and len(obj.data.shape_keys.key_blocks) > 0
+    
+    def _apply_shape_key_delta(self, obj: bpy.types.Object, deltas: dict):
+        keys = obj.data.shape_keys.key_blocks
+
+        if obj.data.shape_keys.use_relative:
+            for kb in keys:
+                for idx, delta in deltas.items():
+                    kb.data[idx].co += delta
+        else:
+            kb = keys[0]
+            for idx, delta in deltas.items():
+                kb.data[idx].co += delta
