@@ -233,7 +233,9 @@ class UME_EditMode(UME_P_EditMode):
                 proxy_vert if transfer_back else local_vert
             ].value
 
-    def _transfer_shape_keys(self, proxy: UME_SafeObject, obj: UME_SafeObject, topo, transfer_back: bool = True):
+    def _transfer_shape_keys(
+        self, session: UME_P_Session, proxy: UME_SafeObject, obj: UME_SafeObject, topo, transfer_back: bool = True
+    ):
         if not proxy.object or not obj.object:
             return
 
@@ -260,29 +262,8 @@ class UME_EditMode(UME_P_EditMode):
         dst_inv = dst_obj.matrix_world.inverted()
 
         # -----------------------------------------------------
-        # compute sculpt delta
-        # -----------------------------------------------------
-
-        deltas = []
-
-        src_verts = src_obj.data.vertices
-        dst_verts = dst_obj.data.vertices
-
-        for proxy_vert, local_vert in self._iter_vertex_range(topo):
-            src_index = proxy_vert if transfer_back else local_vert
-            dst_index = local_vert if transfer_back else proxy_vert
-            src_pos = src_verts[src_index].co
-            dst_pos = dst_verts[dst_index].co
-
-            world = src_matrix @ src_pos
-            local = dst_inv @ world
-
-            deltas.append(local - dst_pos)
-
-        # -----------------------------------------------------
         # apply to relative keys
         # -----------------------------------------------------
-
         for key in src_keys.key_blocks:
             # absolute shape keys           # skip entirely
             if not key.relative_key:
@@ -296,13 +277,17 @@ class UME_EditMode(UME_P_EditMode):
             if key == basis:
                 continue
 
+            if not transfer_back:
+                session["proxy_shapekey_state"][key.name] = [
+                    self._get_local_pos(src_matrix, key.data[i].co, dst_inv) for i, _ in enumerate(key.data)
+                ]
+
+            if transfer_back and not self._is_shape_key_modified(session, topo, src_obj, key.name):
+                continue
+
             self._set_shape_key_delta(
                 topo, transfer_back, key.data, dst_keys.key_blocks[key.name].data, src_matrix, dst_inv
             )
-
-        # -----------------------------------------------------
-        # update basis
-        # -----------------------------------------------------
 
     def _transfer_multires(
         self,
@@ -437,7 +422,26 @@ class UME_EditMode(UME_P_EditMode):
             dst_index = local_vert if transfer_back else proxy_vert
             src_pos = src_verts[src_index].co
 
-            world = src_matrix @ src_pos
-            local = dst_inv @ world
+            dst_verts[dst_index].co = self._get_local_pos(src_matrix, src_pos, dst_inv)
 
-            dst_verts[dst_index].co = local
+    def _get_local_pos(self, src_matrix, src_pos, dst_inv):
+        world = src_matrix @ src_pos
+        return dst_inv @ world
+
+    def _is_shape_key_modified(self, session, topo, proxy, src_name: str, threshold=0.0001):
+        old = session["proxy_shapekey_state"][src_name]
+
+        new = proxy.data.shape_keys.key_blocks[src_name]
+
+        max_delta = 0.0
+
+        for proxy_vert, local_vert in self._iter_vertex_range(topo):
+            delta = (new.data[proxy_vert].co - old[local_vert]).length
+
+            max_delta = max(max_delta, delta)
+
+            if max_delta > threshold:
+                print(f"{src_name} has changed at index {proxy_vert} | {max_delta}")
+                return True
+
+        return False
