@@ -46,8 +46,14 @@ class EditState(UME_P_EditModeState):
             if session is None:
                 return
 
-            proxy = self.module.create_proxy(context, list(session.iter_objects()), session)
+            # proxy = self.module.create_proxy(context, list(session.iter_objects()), session)
+            self.module.create_proxy_tasks(context, list(session.iter_objects()), session, self.core.queue)
 
+            self.core.on_finish = lambda ctx: self._finish_enter(ctx)
+
+            bpy.ops.ume.process_tasks()
+            return
+            proxy = self.core.session.proxy
             # -------------------------------------
             # hide originals
             # -------------------------------------
@@ -172,3 +178,49 @@ class EditState(UME_P_EditModeState):
         if session and session.need_recovery:
             session.need_recovery = False
             self.core.cleanup_session(context)
+
+    def _finish_enter(self, context):
+        session = self.core.session
+        if not session:
+            return None
+
+        print("_finish_enter")
+        proxy = session.proxy
+        # -------------------------------------
+        # hide originals
+        # -------------------------------------
+
+        for obj in session.iter_objects():
+            if not obj.object:
+                continue
+            obj.hide_set(True)
+
+        # -------------------------------------
+        # activate proxy
+        # -------------------------------------
+
+        select_all(False)
+
+        proxy.hide_set(False)
+        proxy.select_set(True)
+
+        context.view_layer.objects.active = proxy.object
+
+        # -------------------------------------
+        # switch mode
+        # -------------------------------------
+
+        bpy.ops.object.mode_set(mode=mode)
+
+        bpy.ops.ed.undo_push(message="UME_PROXY_CREATED")
+
+        # -------------------------------------
+        # start monitor
+        # -------------------------------------
+
+        if not session.monitor_running:
+            session.monitor_running = True
+            bpy.app.timers.register(self.monitor, first_interval=0.1)
+
+    def _finish_exit(self, context):
+        pass

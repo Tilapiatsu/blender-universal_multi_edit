@@ -14,7 +14,7 @@ from .edit_modes import tpaint
 
 from .protocol import UME_P_Core
 from .safe_object import UME_SafeObject
-
+from .task_manager import QUEUE, UME_TaskQueue
 
 SESSION = None
 
@@ -35,9 +35,11 @@ MODE_MODULES = {
 
 class UME_Core(UME_P_Core):
     session: Union[UME_Session, None]
+    queue: Union[UME_TaskQueue, None]
 
     def __init__(self):
         self.session = None
+        self.queue = None
 
     # ---------------------------------------------------------
     # HELPERS
@@ -68,6 +70,9 @@ class UME_Core(UME_P_Core):
 
         from .session import UME_Session
         from .state_machine import IdleState
+
+        self.queue = QUEUE
+        self.queue.clear()
 
         s = UME_Session()
         s.mode = mode

@@ -1,4 +1,5 @@
 import bpy
+import bmesh
 from enum import Enum
 from typing import Protocol, Union
 
@@ -56,11 +57,43 @@ class UME_P_Session(Protocol):
     def __contains__(self, key) -> bool: ...
 
 
+class UME_P_Task(Protocol):
+    name: str
+
+    def setup(self, obj, bmesh): ...
+
+    def execute_chunk(self, context, chunk_size): ...
+
+    def cleanup(self, context): ...
+
+    @property
+    def progress(self): ...
+
+
 class UME_P_EditMode(Protocol):
     name: str
+    _build_proxy_task: Union[UME_P_Task, None] = None
     vert_offset: int
     face_offset: int
     loop_offset: int
+
+    @property
+    def build_proxy_task(self) -> UME_P_Task: ...
+
+    def create_proxy_tasks(self, context, obj_list: list[UME_P_SafeObject], session, queue):
+        queue.clear()
+
+        for obj in session.objects:
+            bm = bmesh.new()
+            bm.from_mesh(obj.data)
+            bm.verts.ensure_lookup_table()
+            bm.faces.ensure_lookup_table()
+            self.build_proxy_task.setup(obj, bm, session)
+            queue.add(self.build_proxy_task)
+
+        queue.on_finish = lambda ctx: session.enter_proxy_mode(ctx)
+
+        bpy.ops.ume.process_tasks()
 
     def create_proxy(self, context, objects, session) -> UME_P_SafeObject: ...
 

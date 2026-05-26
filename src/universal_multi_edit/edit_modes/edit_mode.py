@@ -225,7 +225,6 @@ class UME_EditMode(UME_P_EditMode):
         dst_me.normals_split_custom_set(normals)
 
     def _transfer_masks(self, src_attr, dst_attr, topo: dict, transfer_back: bool = True):
-
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
             dst_attr.data[local_vert if transfer_back else proxy_vert].value = src_attr.data[
                 proxy_vert if transfer_back else local_vert
@@ -320,7 +319,9 @@ class UME_EditMode(UME_P_EditMode):
         if not src_mesh:
             return
 
-        reshape_obj = src_mesh
+        reshape_obj = src_mesh.object
+        if dst_obj:
+            dst_obj = dst_obj.object
 
         try:
             if len(reshape_obj.data.vertices) != len(coords):
@@ -340,16 +341,14 @@ class UME_EditMode(UME_P_EditMode):
             # multires reshape
             # ----------------------------------------
 
-            ctx.scene.collection.objects.link(reshape_obj.object)
+            ctx.scene.collection.objects.link(reshape_obj)
 
             select_all(False)
 
             reshape_obj.select_set(True)
             dst_obj.select_set(True)
 
-            if dst_obj.object:
-                ctx.view_layer.objects.active = dst_obj.object
-
+            ctx.view_layer.objects.active = dst_obj
             bpy.ops.object.multires_reshape(modifier=multires.name)
 
         except Exception as e:
@@ -358,8 +357,8 @@ class UME_EditMode(UME_P_EditMode):
         finally:
             select_all(False)
 
-            if reshape_obj.object and reshape_obj.name in bpy.data.objects:
-                bpy.data.objects.remove(reshape_obj.object, do_unlink=True)
+            if reshape_obj.name in bpy.data.objects:
+                bpy.data.objects.remove(reshape_obj, do_unlink=True)
 
     def _get_multires(self, obj: UME_SafeObject):
         for mod in obj.modifiers:

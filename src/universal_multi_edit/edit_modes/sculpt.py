@@ -1,15 +1,88 @@
 import bpy
 import bmesh
-from ..safe_object import (
-    UME_SafeObject,
-)
+from typing import Union
+from ..safe_object import UME_SafeObject
+
 
 from .edit_mode import UME_EditMode
 from ..protocol import UME_P_Session
+from ..task_manager import UME_Task
+
+
+class InitProxyTask(UME_Task):
+    name = "Initialize proxy"
+
+    def __init__(self):
+        super().__init__()
+
+    def execute_chunk(self, context, chunk_size):
+        proxy = bpy.data.meshes.new("UME_PROXY")
+        proxy_obj = bpy.data.objects.new("UME_PROXY", proxy)
+        context.collection.objects.link(proxy_obj)
+        self.session.proxy = UME_SafeObject(proxy_obj)
+
+        return True
+
+
+class BuildProxyTask(UME_Task):
+    name = "Building proxy"
+
+    def __init__(self):
+        super().__init__()
+        self.obj = None
+        self.vertices = None
+        self.bm = None
+
+    def execute_chunk(self, context, chunk_size):
+        end = min(self.current + chunk_size, self.total)
+        for i in range(self.current, end):
+            print(i)
+            v = self.vertices[i]
+
+            # create proxy data
+            self.bm.verts.new(v.co)
+
+        self.current = end
+
+        return self.current >= self.total
+
+
+class CommitProxyTask(UME_Task):
+    name = "Finalizing proxy"
+
+    def __init__(self):
+        super().__init__()
+        self.obj = None
+        self.vertices = None
+        self.bm = None
 
 
 class Mode(UME_EditMode):
     name: str = "SCULPT"
+    _init_proxy_task: Union[UME_Task, None] = None
+    _build_proxy_task: Union[UME_Task, None] = None
+    _commit_proxy_task: Union[UME_Task, None] = None
+
+    @property
+    def init_proxy_task(self) -> UME_Task:
+        if self._init_proxy_task is None:
+            self._init_proxy_task = InitProxyTask()
+
+        return self._init_proxy_task
+
+    @property
+    def build_proxy_task(self) -> UME_Task:
+        if self._build_proxy_task is None:
+            self._build_proxy_task = BuildProxyTask()
+
+        return self._build_proxy_task
+
+    @property
+    def commit_proxy_task(self) -> UME_Task:
+        if self._commit_proxy_task is None:
+            self._commit_proxy_task = CommitProxyTask()
+
+        return self._commit_proxy_task
 
     def create_proxy(self, context, objects: list[UME_SafeObject], session: UME_P_Session) -> UME_SafeObject:
         mesh = bpy.data.meshes.new("UME_ProxyMesh")

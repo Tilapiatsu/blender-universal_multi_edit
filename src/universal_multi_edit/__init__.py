@@ -8,9 +8,12 @@ bl_info = {
     "category": "Object",
 }
 
-from . import core
+from . import core, task_manager
 
-modules = (core,)
+modules = (
+    core,
+    task_manager,
+)
 
 
 def register():

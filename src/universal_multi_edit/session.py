@@ -68,6 +68,11 @@ class UME_Session(UME_P_Session):
         self.topology = {"objects": []}
         self.need_recovery = False
         self.proxy_undo = False
+        self.task_manager = None
+        self.processing = False
+        self.progress = 0.0
+        self.progress_text = ""
+        self.task_queue = None
 
     # -----------------------------------------------------
     # PROXY
@@ -131,6 +136,13 @@ class UME_Session(UME_P_Session):
 
         if active:
             ctx.view_layer.objects.active = active
+
+    def set_progress(self, value, text=""):
+        self.progress = value
+        self.progress_text = text
+
+    def enter_proxy_mode(self, context):
+        bpy.ops.object.mode_set(mode=self.mode)
 
     def set(self, key, value):
         self.data[key] = value
