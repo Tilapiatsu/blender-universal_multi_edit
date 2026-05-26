@@ -123,17 +123,19 @@ class UME_EditMode(UME_P_EditMode):
 
             old_pos[dst_index] = dst_verts[dst_index].co
             new_pos[dst_index] = local
+
+            dst_verts[dst_index].co = local
         
-        deltas = {}
+        # deltas = {}
 
-        for idx in old_pos:
-            deltas[idx] = new_pos[idx] - old_pos[idx]
+        # for idx in old_pos:
+        #     deltas[idx] = new_pos[idx] - old_pos[idx]
 
-        if self._has_shape_keys(dst_obj):
-            self._apply_shape_key_delta(dst_obj, deltas)
-        else:
-            for idx, co in new_pos.items():
-                dst_verts[idx].co = co
+        # if self._has_shape_keys(dst_obj):
+        #     self._apply_shape_key_delta(dst_obj, deltas)
+        # else:
+        #     for idx, co in new_pos.items():
+        #         dst_verts[idx].co = co
 
     def _extract_local_positions_from_proxy(
         self,
@@ -248,21 +250,31 @@ class UME_EditMode(UME_P_EditMode):
         if not basis:
             return
 
+        src_obj = proxy if transfer_back else obj
+        dst_obj = obj if transfer_back else proxy
+
+        src_matrix = src_obj.matrix_world
+        dst_inv = dst_obj.matrix_world.inverted()
+
         # -----------------------------------------------------
         # compute sculpt delta
         # -----------------------------------------------------
 
         deltas = []
 
+        src_verts = src_obj.data.vertices
+        dst_verts = dst_obj.data.vertices
+        
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
-            if transfer_back:
-                src = obj.data.vertices[local_vert].co
-                dst = proxy.data.vertices[proxy_vert].co
-            else:
-                src = proxy.data.vertices[proxy_vert].co
-                dst = obj.data.vertices[local_vert].co
+            src_index = proxy_vert if transfer_back else local_vert
+            dst_index = local_vert if transfer_back else proxy_vert
+            src_pos = src_verts[src_index].co
+            dst_pos = dst_verts[dst_index].co
 
-            deltas.append(dst - src)
+            world = src_matrix @ src_pos
+            local = dst_inv @ world
+
+            deltas.append(local - dst_pos)
 
         # -----------------------------------------------------
         # apply to relative keys
@@ -398,7 +410,7 @@ class UME_EditMode(UME_P_EditMode):
 
         return UME_SafeObject(obj_eval), True, level
 
-    def _has_shape_keys(self, obj: bpy.types.Mesh) -> bool:
+    def _has_shape_keys(self, obj: bpy.types.Object) -> bool:
         return obj.data.shape_keys and len(obj.data.shape_keys.key_blocks) > 0
     
     def _apply_shape_key_delta(self, obj: bpy.types.Object, deltas: dict):
