@@ -279,7 +279,7 @@ class UME_EditMode(UME_P_EditMode):
 
             if not transfer_back:
                 session["proxy_shapekey_state"][key.name] = [
-                    self._get_local_pos(src_matrix, key.data[i].co, dst_inv) for i, _ in enumerate(key.data)
+                    src_obj.data.vertices[i].co - key.data[i].co for i, _ in enumerate(key.data)
                 ]
 
             if transfer_back and not self._is_shape_key_modified(session, topo, src_obj, key.name):
@@ -431,17 +431,21 @@ class UME_EditMode(UME_P_EditMode):
     def _is_shape_key_modified(self, session, topo, proxy, src_name: str, threshold=0.0001):
         old = session["proxy_shapekey_state"][src_name]
 
+        new_base = proxy.data.vertices
         new = proxy.data.shape_keys.key_blocks[src_name]
 
         max_delta = 0.0
+        print(src_name)
 
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
-            delta = (new.data[proxy_vert].co - old[local_vert]).length
+            print("proxy", proxy_vert, new_base[proxy_vert].co - new.data[proxy_vert].co)
+            print("old  ", local_vert, old[local_vert])
+            delta = (new_base[proxy_vert].co - new.data[proxy_vert].co - old[local_vert]).length
 
             max_delta = max(max_delta, delta)
 
-            if max_delta > threshold:
-                print(f"{src_name} has changed at index {proxy_vert} | {max_delta}")
-                return True
-
+            # if max_delta > threshold:
+            #     print(f"{src_name} has changed at index {proxy_vert} | {max_delta}")
+            #     return True
+            #
         return False
