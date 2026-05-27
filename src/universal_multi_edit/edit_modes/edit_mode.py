@@ -1,5 +1,6 @@
-from typing import Tuple
 import bpy
+from typing import Tuple
+from mathutils import Vector
 
 from ..protocol import UME_P_Session, UME_P_EditMode
 from ..safe_object import UME_SafeObject
@@ -255,8 +256,8 @@ class UME_EditMode(UME_P_EditMode):
 
         basis = src_keys.reference_key
 
-        if not basis:
-            return
+        # if not basis:
+        #     return
 
         src_matrix = src_obj.matrix_world
         dst_inv = dst_obj.matrix_world.inverted()
@@ -270,20 +271,29 @@ class UME_EditMode(UME_P_EditMode):
                 continue
 
             # create shape key if missing
-            if not dst_keys or key.name not in dst_keys.key_blocks:
+            if not transfer_back and (not dst_keys or key.name not in dst_keys.key_blocks):
+                # print(f"Create {key.name} for {dst_obj.name}")
                 dst_obj.shape_key_add(name=key.name)
                 dst_keys = dst_obj.data.shape_keys
 
-            if key == basis:
-                continue
+            # if key == basis:
+            #     continue
 
             if not transfer_back:
-                session["proxy_shapekey_state"][key.name] = [
+                # print(f"Store shapekey {key.name} for {src_obj.name}")
+                if src_obj.name not in session["proxy_shapekey"]:
+                    session["proxy_shapekey"][src_obj.name] = {}
+
+                session["proxy_shapekey"][src_obj.name][key.name] = [
                     src_obj.data.vertices[i].co - key.data[i].co for i, _ in enumerate(key.data)
                 ]
 
-            if transfer_back and not self._is_shape_key_modified(session, topo, src_obj, key.name):
+            if transfer_back and not self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name):
                 continue
+            elif transfer_back and key.name not in dst_obj.data.shape_keys.key_blocks:
+                # print(f"Create {key.name} for {dst_obj.name}")
+                dst_obj.shape_key_add(name=key.name)
+                dst_keys = dst_obj.data.shape_keys
 
             self._set_shape_key_delta(
                 topo, transfer_back, key.data, dst_keys.key_blocks[key.name].data, src_matrix, dst_inv
@@ -428,24 +438,33 @@ class UME_EditMode(UME_P_EditMode):
         world = src_matrix @ src_pos
         return dst_inv @ world
 
-    def _is_shape_key_modified(self, session, topo, proxy, src_name: str, threshold=0.0001):
-        old = session["proxy_shapekey_state"][src_name]
+    def _is_shape_key_modified(self, session, topo, dst_obj: bpy.types.Object, src_obj:bpy.types.Object, key_name: str, threshold=0.0001):
+        if key_name in session["proxy_shapekey"][src_obj.name].keys():
+            old = session["proxy_shapekey"][src_obj.name][key_name]
+        else:
+            # print(f"{key_name} does not exist in {src_obj.name}")
+            old = [Vector((0, 0, 0)) for _ in src_obj.data.vertices]
 
-        new_base = proxy.data.vertices
-        new = proxy.data.shape_keys.key_blocks[src_name]
+        new_base = dst_obj.data.vertices
+
+        if key_name in dst_obj.data.shape_keys.key_blocks:
+            new = dst_obj.data.shape_keys.key_blocks[key_name].data
+        else:
+            # print(f"{key_name} does not exist in {dst_obj.name}")
+            new = new_base
 
         max_delta = 0.0
-        print(src_name)
+        # print(f"{key_name} in {dst_obj.name}")
 
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
-            print("proxy", proxy_vert, new_base[proxy_vert].co - new.data[proxy_vert].co)
-            print("old  ", local_vert, old[local_vert])
-            delta = (new_base[proxy_vert].co - new.data[proxy_vert].co - old[local_vert]).length
+            # print("proxy", proxy_vert, new_base[proxy_vert].co - new[proxy_vert].co)
+            # print("old  ", local_vert, old[local_vert])
+            delta = (new_base[proxy_vert].co - new[proxy_vert].co - old[local_vert]).length
 
             max_delta = max(max_delta, delta)
 
-            # if max_delta > threshold:
-            #     print(f"{src_name} has changed at index {proxy_vert} | {max_delta}")
-            #     return True
-            #
+            if max_delta > threshold:
+                # print(f"{key_name} has changed at index {proxy_vert} | {max_delta}")
+                return True
+            
         return False

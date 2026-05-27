@@ -44,6 +44,10 @@ class UME_SafeObject(UME_P_SafeObject):
     @property
     def matrix_world(self):
         return self.object.matrix_world
+    
+    @property
+    def matrix_local(self):
+        return self.object.matrix_local
 
     @property
     def data(self):

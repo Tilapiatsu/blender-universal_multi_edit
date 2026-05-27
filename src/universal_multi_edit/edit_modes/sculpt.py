@@ -96,7 +96,7 @@ class Mode(UME_EditMode):
         proxy = UME_SafeObject(bpy.data.objects.new("UME_Proxy", mesh))
         context.scene.collection.objects.link(proxy.object)
 
-        session.set("proxy_shapekey_state", {})
+        session.set("proxy_shapekey", {})
 
         session.proxy = proxy
         for topo in self._iter_topology_objects(session):
