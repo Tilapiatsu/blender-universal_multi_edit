@@ -262,17 +262,20 @@ class UME_EditMode(UME_P_EditMode):
         src_matrix = src_obj.matrix_world
         dst_inv = dst_obj.matrix_world.inverted()
 
+        basis_modified = False
+
         # -----------------------------------------------------
         # apply to relative keys
         # -----------------------------------------------------
         for key in src_keys.key_blocks:
+            print(f"{key.name}")
             # absolute shape keys           # skip entirely
             if not key.relative_key:
                 continue
 
             # create shape key if missing
             if not transfer_back and (not dst_keys or key.name not in dst_keys.key_blocks):
-                # print(f"Create {key.name} for {dst_obj.name}")
+                print(f"Create {key.name} for {dst_obj.name}")
                 dst_obj.shape_key_add(name=key.name)
                 dst_keys = dst_obj.data.shape_keys
 
@@ -287,14 +290,22 @@ class UME_EditMode(UME_P_EditMode):
                 session["proxy_shapekey"][src_obj.name][key.name] = [
                     src_obj.data.vertices[i].co - key.data[i].co for i, _ in enumerate(key.data)
                 ]
+            
+            if key == basis:
+                basis_modified = self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name, key == basis)
 
-            if transfer_back and not self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name):
-                continue
-            elif transfer_back and key.name not in dst_obj.data.shape_keys.key_blocks:
-                # print(f"Create {key.name} for {dst_obj.name}")
-                dst_obj.shape_key_add(name=key.name)
-                dst_keys = dst_obj.data.shape_keys
-
+            if not basis_modified:
+                print("basis_untoutched")
+                if transfer_back and not self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name, key == basis): # shape keys has not been modified
+                    if key != basis:
+                        print("continue")
+                        continue
+                elif transfer_back and key.name not in dst_obj.data.shape_keys.key_blocks: # Create shapekey if missing
+                    print(f"Create {key.name} for {dst_obj.name}")
+                    dst_obj.shape_key_add(name=key.name)
+                    dst_keys = dst_obj.data.shape_keys
+                
+            print(f"set delta {dst_obj.name} {key.name}")
             self._set_shape_key_delta(
                 topo, transfer_back, key.data, dst_keys.key_blocks[key.name].data, src_matrix, dst_inv
             )
@@ -438,7 +449,7 @@ class UME_EditMode(UME_P_EditMode):
         world = src_matrix @ src_pos
         return dst_inv @ world
 
-    def _is_shape_key_modified(self, session, topo, dst_obj: bpy.types.Object, src_obj:bpy.types.Object, key_name: str, threshold=0.0001):
+    def _is_shape_key_modified(self, session, topo, dst_obj: bpy.types.Object, src_obj:bpy.types.Object, key_name: str, is_basis:bool, threshold=0.0001):
         if key_name in session["proxy_shapekey"][src_obj.name].keys():
             old = session["proxy_shapekey"][src_obj.name][key_name]
         else:
