@@ -44,6 +44,10 @@ class UME_SafeObject(UME_P_SafeObject):
     @property
     def matrix_world(self):
         return self.object.matrix_world
+    
+    @property
+    def matrix_local(self):
+        return self.object.matrix_local
 
     @property
     def data(self):
@@ -52,6 +56,9 @@ class UME_SafeObject(UME_P_SafeObject):
     @property
     def mode(self) -> str:
         return self.object.mode
+
+    def shape_key_add(self, name: str, from_mix=False) -> None:
+        self.object.shape_key_add(name=name, from_mix=from_mix)
 
     def evaluated_get(self, dependency_depsgraph):
         return self.object.evaluated_get(dependency_depsgraph)
