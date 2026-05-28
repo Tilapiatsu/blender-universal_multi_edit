@@ -268,14 +268,16 @@ class UME_EditMode(UME_P_EditMode):
         # apply to relative keys
         # -----------------------------------------------------
         for key in src_keys.key_blocks:
-            print(f"{key.name}")
+            # print(f"{key.name}")
+            is_basis = key == basis
+            # print("is_basis")
             # absolute shape keys           # skip entirely
             if not key.relative_key:
                 continue
 
             # create shape key if missing
             if not transfer_back and (not dst_keys or key.name not in dst_keys.key_blocks):
-                print(f"Create {key.name} for {dst_obj.name}")
+                # print(f"Create {key.name} for {dst_obj.name}")
                 dst_obj.shape_key_add(name=key.name)
                 dst_keys = dst_obj.data.shape_keys
 
@@ -288,26 +290,37 @@ class UME_EditMode(UME_P_EditMode):
                     session["proxy_shapekey"][src_obj.name] = {}
 
                 session["proxy_shapekey"][src_obj.name][key.name] = [
-                    src_obj.data.vertices[i].co - key.data[i].co for i, _ in enumerate(key.data)
+                    src_obj.data.vertices[i].co - key.data[i].co if not is_basis else key.data[i].co for i, _ in enumerate(key.data)
                 ]
             
-            if key == basis:
-                basis_modified = self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name, key == basis)
-
-            if not basis_modified:
-                print("basis_untoutched")
-                if transfer_back and not self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name, key == basis): # shape keys has not been modified
-                    if key != basis:
-                        print("continue")
+            if is_basis:
+                if not transfer_back:
+                    basis_modified = self._is_shape_key_modified(session, topo, dst_obj, src_obj, key.name, is_basis)
+                else:
+                    basis_modified = self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name, is_basis)
+            
+            if transfer_back:
+                # print("basis_untoutched")
+                shape_key_modified = self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name, is_basis)
+                if not basis_modified and not shape_key_modified: # shape keys has not been modified
+                    if not is_basis:
+                        # print("continue")
                         continue
-                elif transfer_back and key.name not in dst_obj.data.shape_keys.key_blocks: # Create shapekey if missing
-                    print(f"Create {key.name} for {dst_obj.name}")
+                elif key.name not in dst_obj.data.shape_keys.key_blocks and shape_key_modified: # Create shapekey if missing
+                    # print(f"Create {key.name} for {dst_obj.name}")
                     dst_obj.shape_key_add(name=key.name)
                     dst_keys = dst_obj.data.shape_keys
-                
-            print(f"set delta {dst_obj.name} {key.name}")
+            
+            if key.name not in dst_keys.key_blocks:
+                continue
+
+            # print(f"set delta {dst_obj.name} {key.name}")
             self._set_shape_key_delta(
                 topo, transfer_back, key.data, dst_keys.key_blocks[key.name].data, src_matrix, dst_inv
+            )
+            if is_basis:
+                self._set_shape_key_delta(
+                topo, transfer_back, key.data, dst_obj.data.vertices, src_matrix, dst_inv
             )
 
     def _transfer_multires(
@@ -458,7 +471,7 @@ class UME_EditMode(UME_P_EditMode):
 
         new_base = dst_obj.data.vertices
 
-        if key_name in dst_obj.data.shape_keys.key_blocks:
+        if key_name in dst_obj.data.shape_keys.key_blocks and not is_basis:
             new = dst_obj.data.shape_keys.key_blocks[key_name].data
         else:
             # print(f"{key_name} does not exist in {dst_obj.name}")
