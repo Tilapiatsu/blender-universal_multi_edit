@@ -192,15 +192,15 @@ class UME_EditMode(UME_P_EditMode):
     # TRANSFER VERTEX WEIGHTS
     # ---------------------------------------------------------
 
-    def _transfer_vertex_weights(self, proxy_group, dst_group, topo: dict, transfer_back: bool = True):
-        for proxy_vert, local_vert in self._iter_vertex_range(topo):
+    def _transfer_vertex_weights(self, src_group, dst_group, topo: dict, transfer_back: bool = True):
+        for src_vert, local_vert in self._iter_vertex_range(topo):
             try:
-                weight = proxy_group.weight(proxy_vert if transfer_back else local_vert)
+                weight = src_group.weight(src_vert if transfer_back else local_vert)
 
-            except:
+            except RuntimeError:
                 continue
 
-            dst_group.add([local_vert if transfer_back else proxy_vert], weight, "REPLACE")
+            dst_group.add([local_vert if transfer_back else src_vert], weight, "REPLACE")
 
     def _transfer_uvs(self, src_uv, dst_uv, topo: dict, transfer_back: bool = True):
         for proxy_loop, local_loop in self._iter_loop_range(topo):
@@ -460,7 +460,7 @@ class UME_EditMode(UME_P_EditMode):
             old = session["original_shapekey"][src_obj.name][key_name]
         else:
             # print(f"{key_name} does not exist in {src_obj.name}")
-            old = [Vector((0, 0, 0)) for _ in src_obj.data.vertices]
+            old = [Vector((0, 0, 0)) for _ in range(len(src_obj.data.vertices))]
 
         new_base = dst_obj.data.vertices
 
@@ -499,7 +499,7 @@ class UME_EditMode(UME_P_EditMode):
         return False if obj.vertex_groups.active is None else obj.vertex_groups.active.name == name
 
     def _create_vertex_weight(self, obj: UME_SafeObject, name: str) -> bpy.types.VertexGroup:
-        print("create vertex weight")
+        print("create vertex weight", name, "for", obj.name)
         return obj.vertex_groups.new(name=name)
 
     def _is_vertex_group_modified(
@@ -511,35 +511,72 @@ class UME_EditMode(UME_P_EditMode):
         group_name: str,
         threshold=0.0001,
     ):
-        if group_name in session["original_vertexweight"][src_obj.name].keys():
-            old = session["original_vertexweight"][src_obj.name][group_name]
+        if group_name in session["original_vertexweight"][src_obj.name]["weights"].keys():
+            original = session["original_vertexweight"][src_obj.name]["weights"][group_name]
         else:
-            # print(f"{key_name} does not exist in {src_obj.name}")
-            old = [Vector((0, 0, 0)) for _ in src_obj.data.vertices]
+            original = {i: 0.0 for i in range(1)}
 
-        new_base = dst_obj.data.vertices
+        # if not old or not len(old):
+        #     print("storing old")
+        #     self._store_object_weights(src_obj, session, True)
+        #     old = session["original_vertexweight"][src_obj.name]["weights"][group_name]
 
-        if not dst_obj.data.shape_keys:
+        dst_group = dst_obj.vertex_groups.get(group_name)
+
+        if not dst_group:
+            print("new_base")
             return True
-        if dst_obj.data.shape_keys and group_name in dst_obj.data.shape_keys.key_blocks:
-            new = dst_obj.data.shape_keys.key_blocks[group_name].data
-        else:
-            new = new_base
+
+        if (
+            dst_obj.name not in session["original_vertexweight"].keys()
+            or group_name not in session["original_vertexweight"][dst_obj.name]
+        ):
+            self._store_object_weights(dst_obj, session, False)
+
+        if len(session["original_vertexweight"][dst_obj.name]["weights"][group_name].keys()) != len(
+            session["original_vertexweight"][src_obj.name]["weights"][group_name]
+        ):
+            return True
 
         max_delta = 0.0
-        # print(f"{key_name} in {dst_obj.name}")
+        print("original", original)
+
+        min_idx = min(original.keys())
+        max_idx = max(original.keys())
+
+        if len(dst_obj.data.vertices) >= max_idx or len(dst_obj.data.vertices) <= min_idx:
+            return False
 
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
-            # print("proxy", proxy_vert, new_base[proxy_vert].co - new[proxy_vert].co)
-            # print("old  ", local_vert, old[local_vert])
-            delta = (new_base[proxy_vert].co - new[proxy_vert].co - old[local_vert]).length
+            try:
+                print("read index", local_vert)
+                dst_weight = dst_group.weight(proxy_vert)
+                print("weight", dst_weight)
+            except RuntimeError:
+                # print("not in weight", proxy_vert)
+                continue
+
+            if local_vert not in original.keys():
+                continue
+
+            original_weight = original[local_vert]
+
+            print("original_weight", original_weight)
+
+            if not original_weight:
+                continue
+
+            delta = (dst_weight - original_weight).length
 
             max_delta = max(max_delta, delta)
 
+            print(max_delta)
+
             if max_delta > threshold:
-                # print(f"{key_name} has changed at index {proxy_vert} | {max_delta}")
+                print("modified")
                 return True
 
+        print("not modified")
         return False
 
     def _has_vertex_color(self, obj: UME_SafeObject) -> bool:
@@ -557,11 +594,11 @@ class UME_EditMode(UME_P_EditMode):
         group_name: str,
         threshold=0.0001,
     ):
-        if group_name in session["original_vertexcolor"][src_obj.name].keys():
-            old = session["original_vertexcolor"][src_obj.name][group_name]
+        if group_name in session["original_vertexcolor"][src_obj.name]["weights"].keys():
+            old = session["original_vertexcolor"][src_obj.name]["weights"][group_name]
         else:
             # print(f"{key_name} does not exist in {src_obj.name}")
-            old = [Vector((0, 0, 0)) for _ in src_obj.data.vertices]
+            old = [Vector((0, 0, 0)) for _ in range(len(src_obj.data.vertices))]
 
         new_base = dst_obj.data.vertices
 
@@ -587,3 +624,22 @@ class UME_EditMode(UME_P_EditMode):
                 return True
 
         return False
+
+    def _store_object_weights(self, obj: UME_SafeObject, session: UME_P_Session, transfer_back: bool = True):
+        for vw in obj.vertex_groups:
+            if obj.name not in session["original_vertexweight"]:
+                session["original_vertexweight"][obj.name] = {"active": None, "weights": {}}
+
+            if self._is_active_vertex_group(obj, vw.name):
+                session["original_vertexweight"][obj.name]["active"] = vw.name
+
+            values = {}
+            # if not transfer_back:
+            for i in range(len(obj.data.vertices)):
+                try:
+                    v = {i: vw.weight(i)}
+                    values.update(v)
+                except RuntimeError:
+                    continue
+
+            session["original_vertexweight"][obj.name]["weights"][vw.name] = values
