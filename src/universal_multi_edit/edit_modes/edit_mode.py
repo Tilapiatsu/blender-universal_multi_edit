@@ -522,23 +522,21 @@ class UME_EditMode(UME_P_EditMode):
         #     old = session["original_vertexweight"][src_obj.name]["weights"][group_name]
 
         dst_group = dst_obj.vertex_groups.get(group_name)
+        dst_group_exist = dst_group is not None
 
-        if not dst_group:
-            print("new_base")
-            return True
-
-        if (
-            dst_obj.name not in session["original_vertexweight"].keys()
-            or group_name not in session["original_vertexweight"][dst_obj.name]
-        ):
-            self._store_object_weights(dst_obj, session, False)
-
-        if len(session["original_vertexweight"][dst_obj.name]["weights"][group_name].keys()) != len(
-            session["original_vertexweight"][src_obj.name]["weights"][group_name]
-        ):
-            return True
+        # if (
+        #     dst_obj.name not in session["original_vertexweight"].keys()
+        #     or group_name not in session["original_vertexweight"][dst_obj.name]
+        # ):
+        #     self._store_object_weights(dst_obj, session, False)
+        #
+        # if len(session["original_vertexweight"][dst_obj.name]["weights"][group_name].keys()) != len(
+        #     session["original_vertexweight"][src_obj.name]["weights"][group_name]
+        # ):
+        #     return True
 
         max_delta = 0.0
+
         print("original", original)
 
         min_idx = min(original.keys())
@@ -549,12 +547,14 @@ class UME_EditMode(UME_P_EditMode):
 
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
             try:
-                print("read index", local_vert)
-                dst_weight = dst_group.weight(proxy_vert)
-                print("weight", dst_weight)
+                if dst_group_exist:
+                    print("read index", local_vert)
+                    dst_weight = dst_group.weight(proxy_vert)
+                    print("weight", dst_weight)
+                else:
+                    dst_weight = 0.0
             except RuntimeError:
-                # print("not in weight", proxy_vert)
-                continue
+                dst_weight = 0.0
 
             if local_vert not in original.keys():
                 continue
@@ -566,7 +566,7 @@ class UME_EditMode(UME_P_EditMode):
             if not original_weight:
                 continue
 
-            delta = (dst_weight - original_weight).length
+            delta = dst_weight - original_weight
 
             max_delta = max(max_delta, delta)
 

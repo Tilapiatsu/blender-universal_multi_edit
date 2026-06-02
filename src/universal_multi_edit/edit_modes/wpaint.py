@@ -110,4 +110,4 @@ class Mode(UME_EditMode):
 
                 dst.object.data.update()
 
-            dst.vertex_groups.active = dst.vertex_groups.get(originial_weight["active"])
+            # dst.vertex_groups.active = dst.vertex_groups.get(originial_weight["active"])
