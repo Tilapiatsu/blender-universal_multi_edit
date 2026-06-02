@@ -147,7 +147,7 @@ class Mode(UME_EditMode):
                 )
 
             else:
-                if self._has_shape_keys(obj) or self._has_shape_keys(proxy):
+                if self._has_shape_keys(obj) or transfer_back:
                     self._transfer_shape_keys(session, proxy, obj, topo, transfer_back)
                 else:
                     self._transfer_vertex_positions(

@@ -241,12 +241,14 @@ class UME_EditMode(UME_P_EditMode):
             dst_keys = dst_obj.data.shape_keys
 
         if not src_keys:
-            return
+            if not transfer_back:
+                return
+            else:
+                self._remove_deleted_shape_key([], dst_obj, dst_keys)
+                return
 
-        basis = src_keys.reference_key
-
-        # if not basis:
-        #     return
+        else:
+            basis = src_keys.reference_key
 
         src_matrix = src_obj.matrix_world
         dst_inv = dst_obj.matrix_world.inverted()
@@ -257,7 +259,6 @@ class UME_EditMode(UME_P_EditMode):
         # apply to relative keys
         # -----------------------------------------------------
         for key in src_keys.key_blocks:
-            # print(f"{key.name}")
             is_basis = key == basis
 
             # absolute shape keys           # skip entirely
@@ -306,6 +307,35 @@ class UME_EditMode(UME_P_EditMode):
             )
             if is_basis:
                 self._set_shape_key_delta(topo, transfer_back, key.data, dst_obj.data.vertices, src_matrix, dst_inv)
+
+        if not dst_keys.key_blocks:
+            return
+
+        self._remove_deleted_shape_key(src_keys.key_blocks, dst_obj, dst_keys)
+
+        if len(dst_obj.data.shape_keys.key_blocks) == 1:
+            self._remove_deleted_shape_key([], dst_obj, dst_keys)
+
+    def _remove_deleted_shape_key(self, src_key_blocks, dst_obj, dst_keys):
+        to_remove = []
+
+        for key in dst_keys.key_blocks:
+            if not len(src_key_blocks):
+                to_remove.append(key.name)
+                continue
+
+            if src_key_blocks and key.name not in src_key_blocks:
+                to_remove.append(key.name)
+
+        if not len(to_remove):
+            return
+
+        for key in reversed(to_remove):
+            for k in dst_obj.data.shape_keys.key_blocks:
+                if k.name == key:
+                    dst_obj.object.shape_key_remove(k)
+
+        dst_obj.data.update()
 
     def _transfer_multires(
         self,
