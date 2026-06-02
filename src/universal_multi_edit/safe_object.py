@@ -44,7 +44,7 @@ class UME_SafeObject(UME_P_SafeObject):
     @property
     def matrix_world(self):
         return self.object.matrix_world
-    
+
     @property
     def matrix_local(self):
         return self.object.matrix_local
@@ -56,6 +56,10 @@ class UME_SafeObject(UME_P_SafeObject):
     @property
     def mode(self) -> str:
         return self.object.mode
+
+    @property
+    def vertex_groups(self) -> bpy.types.VertexGroups:
+        return self.object.vertex_groups
 
     def shape_key_add(self, name: str, from_mix=False) -> None:
         self.object.shape_key_add(name=name, from_mix=from_mix)

@@ -19,6 +19,7 @@ class Mode(UME_EditMode):
         me = bpy.data.meshes.new("UME_WPaint")
         bm = bmesh.new()
         session.set("wpaint_meta", {})
+        session.set("original_vertexweight", {})
 
         self._init_offsets()
 
@@ -28,7 +29,8 @@ class Mode(UME_EditMode):
 
             self._store_object_offsets(obj, session)
 
-            session["wpaint_meta"][obj.name] = {"active_group": active_group(obj)}
+            self._store_object_weights(obj, session)
+
             vmap = {}
             src = bmesh.new()
             src.from_mesh(obj.data)
@@ -53,7 +55,6 @@ class Mode(UME_EditMode):
         context.scene.collection.objects.link(proxy)
 
         session.proxy = proxy
-        proxy.vertex_groups.new(name=NAME)
 
         self._transfer(context, session, session.proxy, transfer_back=False)
 
@@ -75,26 +76,43 @@ class Mode(UME_EditMode):
             if not obj or not obj.object:
                 continue
 
-            meta = session["wpaint_meta"].get(obj.name)
+            if transfer_back:
+                src = proxy
+                dst = obj
+            else:
+                src = obj
+                dst = proxy
 
-            if not meta:
+            if transfer_back:
+                self._store_object_weights(src, session)
+
+            originial_weight = session["original_vertexweight"].get(src.name)
+
+            if not originial_weight and not transfer_back:
                 continue
 
-            active_name = meta["active_group"]
+            for w in originial_weight["weights"]:
+                src_weight = src.vertex_groups.get(w["name"])
+                dst_weight = dst.vertex_groups.get(w["name"])
 
-            if transfer_back:
-                src = proxy.object.vertex_groups.get(NAME)
-                dst = obj.object.vertex_groups.get(active_name)
-            else:
-                src = obj.object.vertex_groups.get(active_name)
-                dst = proxy.object.vertex_groups.get(NAME)
+                if not src_weight:
+                    continue
 
-            if not dst:
-                dst = obj.object.vertex_groups.new(name=active_name)
+                if not dst_weight:
+                    dst_weight = self._create_vertex_weight(dst, w["name"])
 
-            self._transfer_vertex_weights(src, dst, topo, transfer_back=transfer_back)
+                self._transfer_vertex_weights(src_weight, dst_weight, topo, transfer_back=transfer_back)
 
-            if transfer_back:
-                obj.object.data.update()
-            else:
-                proxy.object.data.update()
+                dst.object.data.update()
+
+            dst.vertex_groups.active = dst.vertex_groups.get(originial_weight["active"])
+
+    def _store_object_weights(self, obj: UME_SafeObject, session: UME_P_Session):
+        for vw in obj.vertex_groups:
+            if obj.name not in session["original_vertexweight"]:
+                session["original_vertexweight"][obj.name] = {"active": None, "weights": []}
+
+            if self._is_active_vertex_group(obj, vw.name):
+                session["original_vertexweight"][obj.name]["active"] = vw.name
+
+            session["original_vertexweight"][obj.name]["weights"].append({"name": vw.name})

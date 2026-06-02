@@ -127,17 +127,6 @@ class UME_EditMode(UME_P_EditMode):
 
             dst_verts[dst_index].co = local
 
-        # deltas = {}
-
-        # for idx in old_pos:
-        #     deltas[idx] = new_pos[idx] - old_pos[idx]
-
-        # if self._has_shape_keys(dst_obj):
-        #     self._apply_shape_key_delta(dst_obj, deltas)
-        # else:
-        #     for idx, co in new_pos.items():
-        #         dst_verts[idx].co = co
-
     def _extract_local_positions_from_proxy(
         self,
         proxy: UME_SafeObject,
@@ -270,7 +259,7 @@ class UME_EditMode(UME_P_EditMode):
         for key in src_keys.key_blocks:
             # print(f"{key.name}")
             is_basis = key == basis
-            # print("is_basis")
+
             # absolute shape keys           # skip entirely
             if not key.relative_key:
                 continue
@@ -281,47 +270,42 @@ class UME_EditMode(UME_P_EditMode):
                 dst_obj.shape_key_add(name=key.name)
                 dst_keys = dst_obj.data.shape_keys
 
-            # if key == basis:
-            #     continue
-
             if not transfer_back:
                 # print(f"Store shapekey {key.name} for {src_obj.name}")
-                if src_obj.name not in session["proxy_shapekey"]:
-                    session["proxy_shapekey"][src_obj.name] = {}
-
-                session["proxy_shapekey"][src_obj.name][key.name] = [
-                    src_obj.data.vertices[i].co - key.data[i].co if not is_basis else key.data[i].co for i, _ in enumerate(key.data)
+                session["original_shapekey"][src_obj.name][key.name] = [
+                    src_obj.data.vertices[i].co - key.data[i].co if not is_basis else key.data[i].co
+                    for i, _ in enumerate(key.data)
                 ]
-            
+
             if is_basis:
                 if not transfer_back:
                     basis_modified = self._is_shape_key_modified(session, topo, dst_obj, src_obj, key.name, is_basis)
                 else:
                     basis_modified = self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name, is_basis)
-            
+
             if transfer_back:
-                # print("basis_untoutched")
                 shape_key_modified = self._is_shape_key_modified(session, topo, src_obj, dst_obj, key.name, is_basis)
-                if not basis_modified and not shape_key_modified: # shape keys has not been modified
+
+                if is_basis and not dst_obj.data.shape_keys:
+                    dst_keys = self._create_shape_key(dst_obj, key.name)
+
+                elif not basis_modified and not shape_key_modified:  # shape keys has not been modified
                     if not is_basis:
-                        # print("continue")
                         continue
-                elif key.name not in dst_obj.data.shape_keys.key_blocks and shape_key_modified: # Create shapekey if missing
-                    # print(f"Create {key.name} for {dst_obj.name}")
-                    dst_obj.shape_key_add(name=key.name)
-                    dst_keys = dst_obj.data.shape_keys
-            
-            if key.name not in dst_keys.key_blocks:
+
+                elif shape_key_modified and (
+                    not dst_obj.data.shape_keys or key.name not in dst_obj.data.shape_keys.key_blocks
+                ):
+                    dst_keys = self._create_shape_key(dst_obj, key.name)
+
+            if not dst_keys or key.name not in dst_keys.key_blocks:
                 continue
 
-            # print(f"set delta {dst_obj.name} {key.name}")
             self._set_shape_key_delta(
                 topo, transfer_back, key.data, dst_keys.key_blocks[key.name].data, src_matrix, dst_inv
             )
             if is_basis:
-                self._set_shape_key_delta(
-                topo, transfer_back, key.data, dst_obj.data.vertices, src_matrix, dst_inv
-            )
+                self._set_shape_key_delta(topo, transfer_back, key.data, dst_obj.data.vertices, src_matrix, dst_inv)
 
     def _transfer_multires(
         self,
@@ -435,7 +419,7 @@ class UME_EditMode(UME_P_EditMode):
 
         return UME_SafeObject(obj_eval), True, level
 
-    def _has_shape_keys(self, obj: bpy.types.Object) -> bool:
+    def _has_shape_keys(self, obj: UME_SafeObject) -> bool:
         return obj.data.shape_keys and len(obj.data.shape_keys.key_blocks) > 0
 
     def _apply_shape_key_delta(self, obj: bpy.types.Object, deltas: dict):
@@ -462,16 +446,27 @@ class UME_EditMode(UME_P_EditMode):
         world = src_matrix @ src_pos
         return dst_inv @ world
 
-    def _is_shape_key_modified(self, session, topo, dst_obj: bpy.types.Object, src_obj:bpy.types.Object, key_name: str, is_basis:bool, threshold=0.0001):
-        if key_name in session["proxy_shapekey"][src_obj.name].keys():
-            old = session["proxy_shapekey"][src_obj.name][key_name]
+    def _is_shape_key_modified(
+        self,
+        session,
+        topo,
+        dst_obj: bpy.types.Object,
+        src_obj: bpy.types.Object,
+        key_name: str,
+        is_basis: bool,
+        threshold=0.0001,
+    ):
+        if key_name in session["original_shapekey"][src_obj.name].keys():
+            old = session["original_shapekey"][src_obj.name][key_name]
         else:
             # print(f"{key_name} does not exist in {src_obj.name}")
             old = [Vector((0, 0, 0)) for _ in src_obj.data.vertices]
 
         new_base = dst_obj.data.vertices
 
-        if key_name in dst_obj.data.shape_keys.key_blocks and not is_basis:
+        if not dst_obj.data.shape_keys:
+            return True
+        if not is_basis and (dst_obj.data.shape_keys and key_name in dst_obj.data.shape_keys.key_blocks):
             new = dst_obj.data.shape_keys.key_blocks[key_name].data
         else:
             # print(f"{key_name} does not exist in {dst_obj.name}")
@@ -490,5 +485,105 @@ class UME_EditMode(UME_P_EditMode):
             if max_delta > threshold:
                 # print(f"{key_name} has changed at index {proxy_vert} | {max_delta}")
                 return True
-            
+
+        return False
+
+    def _create_shape_key(self, obj, name):
+        obj.shape_key_add(name=name)
+        return obj.data.shape_keys
+
+    def _has_vertex_group(self, obj: UME_SafeObject) -> bool:
+        return len(obj.vertex_groups) > 0
+
+    def _is_active_vertex_group(self, obj: UME_SafeObject, name: str) -> bool:
+        return False if obj.vertex_groups.active is None else obj.vertex_groups.active.name == name
+
+    def _create_vertex_weight(self, obj: UME_SafeObject, name: str) -> bpy.types.VertexGroup:
+        print("create vertex weight")
+        return obj.vertex_groups.new(name=name)
+
+    def _is_vertex_group_modified(
+        self,
+        session,
+        topo,
+        dst_obj: bpy.types.Object,
+        src_obj: bpy.types.Object,
+        group_name: str,
+        threshold=0.0001,
+    ):
+        if group_name in session["original_vertexweight"][src_obj.name].keys():
+            old = session["original_vertexweight"][src_obj.name][group_name]
+        else:
+            # print(f"{key_name} does not exist in {src_obj.name}")
+            old = [Vector((0, 0, 0)) for _ in src_obj.data.vertices]
+
+        new_base = dst_obj.data.vertices
+
+        if not dst_obj.data.shape_keys:
+            return True
+        if dst_obj.data.shape_keys and group_name in dst_obj.data.shape_keys.key_blocks:
+            new = dst_obj.data.shape_keys.key_blocks[group_name].data
+        else:
+            new = new_base
+
+        max_delta = 0.0
+        # print(f"{key_name} in {dst_obj.name}")
+
+        for proxy_vert, local_vert in self._iter_vertex_range(topo):
+            # print("proxy", proxy_vert, new_base[proxy_vert].co - new[proxy_vert].co)
+            # print("old  ", local_vert, old[local_vert])
+            delta = (new_base[proxy_vert].co - new[proxy_vert].co - old[local_vert]).length
+
+            max_delta = max(max_delta, delta)
+
+            if max_delta > threshold:
+                # print(f"{key_name} has changed at index {proxy_vert} | {max_delta}")
+                return True
+
+        return False
+
+    def _has_vertex_color(self, obj: UME_SafeObject) -> bool:
+        return len(obj.data.color_attributes) > 0
+
+    def _create_vertex_color(self, obj, name, type, domain) -> bpy.types.AttributeGroupMesh:
+        return obj.data.color_attributes.new(name=name, type=type, domain=domain)
+
+    def _is_vertex_color_modified(
+        self,
+        session,
+        topo,
+        dst_obj: bpy.types.Object,
+        src_obj: bpy.types.Object,
+        group_name: str,
+        threshold=0.0001,
+    ):
+        if group_name in session["original_vertexcolor"][src_obj.name].keys():
+            old = session["original_vertexcolor"][src_obj.name][group_name]
+        else:
+            # print(f"{key_name} does not exist in {src_obj.name}")
+            old = [Vector((0, 0, 0)) for _ in src_obj.data.vertices]
+
+        new_base = dst_obj.data.vertices
+
+        if not dst_obj.data.shape_keys:
+            return True
+        if dst_obj.data.shape_keys and group_name in dst_obj.data.shape_keys.key_blocks:
+            new = dst_obj.data.shape_keys.key_blocks[group_name].data
+        else:
+            new = new_base
+
+        max_delta = 0.0
+        # print(f"{key_name} in {dst_obj.name}")
+
+        for proxy_vert, local_vert in self._iter_vertex_range(topo):
+            # print("proxy", proxy_vert, new_base[proxy_vert].co - new[proxy_vert].co)
+            # print("old  ", local_vert, old[local_vert])
+            delta = (new_base[proxy_vert].co - new[proxy_vert].co - old[local_vert]).length
+
+            max_delta = max(max_delta, delta)
+
+            if max_delta > threshold:
+                # print(f"{key_name} has changed at index {proxy_vert} | {max_delta}")
+                return True
+
         return False

@@ -96,11 +96,12 @@ class Mode(UME_EditMode):
         proxy = UME_SafeObject(bpy.data.objects.new("UME_Proxy", mesh))
         context.scene.collection.objects.link(proxy.object)
 
-        session.set("proxy_shapekey", {})
+        session.set("original_shapekey", {})
 
         session.proxy = proxy
         for topo in self._iter_topology_objects(session):
             obj = topo["object"]
+            session["original_shapekey"][obj.name] = {}
             if self._has_shape_keys(obj) and not self._get_multires(obj):
                 self._transfer_shape_keys(session, session.proxy, obj, topo, transfer_back=False)
 
@@ -146,7 +147,7 @@ class Mode(UME_EditMode):
                 )
 
             else:
-                if self._has_shape_keys(obj):
+                if self._has_shape_keys(obj) or self._has_shape_keys(proxy):
                     self._transfer_shape_keys(session, proxy, obj, topo, transfer_back)
                 else:
                     self._transfer_vertex_positions(
