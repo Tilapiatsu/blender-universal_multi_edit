@@ -546,28 +546,9 @@ class UME_EditMode(UME_P_EditMode):
         else:
             original = {i: 0.0 for i in range(1)}
 
-        # if not old or not len(old):
-        #     print("storing old")
-        #     self._store_object_weights(src_obj, session, True)
-        #     old = session["original_vertexweight"][src_obj.name]["weights"][group_name]
-
         dst_group = dst_obj.vertex_groups.get(group_name)
         dst_group_exist = dst_group is not None
-
-        # if (
-        #     dst_obj.name not in session["original_vertexweight"].keys()
-        #     or group_name not in session["original_vertexweight"][dst_obj.name]
-        # ):
-        #     self._store_object_weights(dst_obj, session, False)
-        #
-        # if len(session["original_vertexweight"][dst_obj.name]["weights"][group_name].keys()) != len(
-        #     session["original_vertexweight"][src_obj.name]["weights"][group_name]
-        # ):
-        #     return True
-
         max_delta = 0.0
-
-        print("original", original)
 
         min_idx = min(original.keys())
         max_idx = max(original.keys())
@@ -578,9 +559,7 @@ class UME_EditMode(UME_P_EditMode):
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
             try:
                 if dst_group_exist:
-                    print("read index", local_vert)
                     dst_weight = dst_group.weight(proxy_vert)
-                    print("weight", dst_weight)
                 else:
                     dst_weight = 0.0
             except RuntimeError:
@@ -591,23 +570,23 @@ class UME_EditMode(UME_P_EditMode):
 
             original_weight = original[local_vert]
 
-            print("original_weight", original_weight)
-
             if not original_weight:
                 continue
 
-            delta = dst_weight - original_weight
-
+            delta = abs(dst_weight - original_weight)
             max_delta = max(max_delta, delta)
 
-            print(max_delta)
-
             if max_delta > threshold:
-                print("modified")
+                print(dst_weight, original_weight)
                 return True
 
-        print("not modified")
         return False
+
+    def _remove_vertex_group(self, obj, name: str):
+        if name not in obj.vertex_groups:
+            return
+        print(f"removing vertex group{name} in {obj.name}")
+        obj.vertex_groups.remove(obj.vertex_groups[name])
 
     def _has_vertex_color(self, obj: UME_SafeObject) -> bool:
         return len(obj.data.color_attributes) > 0

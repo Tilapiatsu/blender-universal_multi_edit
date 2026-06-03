@@ -92,7 +92,7 @@ class Mode(UME_EditMode):
                 continue
 
             for w_name in originial_weight["weights"].keys():
-                print(w_name)
+                print(src.name, w_name)
                 src_weight = src.vertex_groups.get(w_name)
                 dst_weight = dst.vertex_groups.get(w_name)
 
@@ -103,10 +103,15 @@ class Mode(UME_EditMode):
                     if not dst_weight:
                         dst_weight = self._create_vertex_weight(dst, w_name)
                     self._transfer_vertex_weights(src_weight, dst_weight, topo, transfer_back=transfer_back)
-                elif self._is_vertex_group_modified(session, topo, dst, src, w_name):
-                    if not dst_weight:
-                        dst_weight = self._create_vertex_weight(dst, w_name)
-                    self._transfer_vertex_weights(src_weight, dst_weight, topo, transfer_back=transfer_back)
+                else:
+                    print(dst_weight)
+                    if dst_weight is None:
+                        self._remove_vertex_group(dst, w_name)
+                    if self._is_vertex_group_modified(session, topo, dst, src, w_name):
+                        print("is_modified")
+                        if not dst_weight:
+                            dst_weight = self._create_vertex_weight(dst, w_name)
+                        self._transfer_vertex_weights(src_weight, dst_weight, topo, transfer_back=transfer_back)
 
                 dst.object.data.update()
 
