@@ -149,6 +149,9 @@ class EditState(UME_P_EditModeState):
                 print("UME MONITOR:", e)
 
             return None
+        else:
+            if session.proxy_undo:
+                session.proxy_undo = False
 
         # -----------------------------------------
         # user exited mode
