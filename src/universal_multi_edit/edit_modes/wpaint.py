@@ -92,7 +92,6 @@ class Mode(UME_EditMode):
                 continue
 
             for w_name in originial_weight["weights"].keys():
-                print(dst.name, w_name)
                 src_weight = src.vertex_groups.get(w_name)
                 dst_weight = dst.vertex_groups.get(w_name)
 
@@ -112,5 +111,9 @@ class Mode(UME_EditMode):
                         self._transfer_vertex_weights(src_weight, dst_weight, topo, transfer_back=transfer_back)
 
                 dst.object.data.update()
+
+            for w in dst.vertex_groups:
+                if w.name not in src.vertex_groups:
+                    self._remove_vertex_group(dst, w.name)
 
             # dst.vertex_groups.active = dst.vertex_groups.get(originial_weight["active"])

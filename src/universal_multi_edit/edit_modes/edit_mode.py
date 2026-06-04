@@ -193,7 +193,6 @@ class UME_EditMode(UME_P_EditMode):
     # ---------------------------------------------------------
 
     def _transfer_vertex_weights(self, src_group, dst_group, topo: dict, transfer_back: bool = True):
-        print("transfer_weight")
         for src_vert, local_vert in self._iter_vertex_range(topo):
             try:
                 weight = src_group.weight(src_vert if transfer_back else local_vert)
@@ -530,7 +529,7 @@ class UME_EditMode(UME_P_EditMode):
         return False if obj.vertex_groups.active is None else obj.vertex_groups.active.name == name
 
     def _create_vertex_weight(self, obj: UME_SafeObject, name: str) -> bpy.types.VertexGroup:
-        print("create vertex weight", name, "for", obj.name)
+        # print("create vertex weight", name, "for", obj.name)
         return obj.vertex_groups.new(name=name)
 
     def _is_vertex_group_modified(
@@ -583,7 +582,7 @@ class UME_EditMode(UME_P_EditMode):
     def _remove_vertex_group(self, obj, name: str):
         if name not in obj.vertex_groups:
             return
-        print(f"removing vertex group{name} in {obj.name}")
+        # print(f"removing vertex group{name} in {obj.name}")
         obj.vertex_groups.remove(obj.vertex_groups[name])
 
     def _has_vertex_color(self, obj: UME_SafeObject) -> bool:
