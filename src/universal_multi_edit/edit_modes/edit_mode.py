@@ -193,6 +193,7 @@ class UME_EditMode(UME_P_EditMode):
     # ---------------------------------------------------------
 
     def _transfer_vertex_weights(self, src_group, dst_group, topo: dict, transfer_back: bool = True):
+        print("transfer_weight")
         for src_vert, local_vert in self._iter_vertex_range(topo):
             try:
                 weight = src_group.weight(src_vert if transfer_back else local_vert)
@@ -539,6 +540,7 @@ class UME_EditMode(UME_P_EditMode):
         dst_obj: bpy.types.Object,
         src_obj: bpy.types.Object,
         group_name: str,
+        transfer_back=True,
         threshold=0.0001,
     ):
         if group_name in session["original_vertexweight"][src_obj.name]["weights"].keys():
@@ -550,25 +552,22 @@ class UME_EditMode(UME_P_EditMode):
         dst_group_exist = dst_group is not None
         max_delta = 0.0
 
-        min_idx = min(original.keys())
-        max_idx = max(original.keys())
-
-        if len(dst_obj.data.vertices) >= max_idx or len(dst_obj.data.vertices) <= min_idx:
-            return False
-
         for proxy_vert, local_vert in self._iter_vertex_range(topo):
+            src_idx = proxy_vert if transfer_back else local_vert
+            dst_idx = local_vert if transfer_back else proxy_vert
+
             try:
                 if dst_group_exist:
-                    dst_weight = dst_group.weight(proxy_vert)
+                    dst_weight = dst_group.weight(dst_idx)
                 else:
                     dst_weight = 0.0
             except RuntimeError:
                 dst_weight = 0.0
 
-            if local_vert not in original.keys():
+            if src_idx not in original.keys():
                 continue
 
-            original_weight = original[local_vert]
+            original_weight = original[src_idx]
 
             if not original_weight:
                 continue
@@ -577,7 +576,6 @@ class UME_EditMode(UME_P_EditMode):
             max_delta = max(max_delta, delta)
 
             if max_delta > threshold:
-                print(dst_weight, original_weight)
                 return True
 
         return False
