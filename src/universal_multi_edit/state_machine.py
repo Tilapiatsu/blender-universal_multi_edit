@@ -1,12 +1,23 @@
 import bpy
-from enum import Enum
-from typing import Protocol, Union
+import traceback
+from typing import Union
 from dataclasses import dataclass
 
 from .edit_modes.edit_mode import UME_EditMode
 from .core import SUPPORTED, MODE_MODULES
 from .protocol import UME_P_Core, UME_P_EditModeState, UME_State
 from .utils import select_all
+
+
+def get_exception(err):
+    tb = err.__traceback__
+
+    while tb.tb_next:
+        tb = tb.tb_next  # Go to the deepest frame
+
+    print(f"Exception: {err}")
+    print(f"File: {tb.tb_frame.f_code.co_filename}")
+    print(f"Line: {tb.tb_lineno}")
 
 
 @dataclass
@@ -85,7 +96,7 @@ class EditState(UME_P_EditModeState):
                 bpy.app.timers.register(self.monitor, first_interval=0.1)
 
         except Exception as e:
-            print("UME ENTER ERROR:", e)
+            print("UME ENTER ERROR:", get_exception(e))
 
     def exit(self, context, mode: str = "OBJECT") -> None:
         session = self.core.session
@@ -105,7 +116,7 @@ class EditState(UME_P_EditModeState):
                 self.module.transfer_back(context, session)
 
         except Exception as e:
-            print("UME EXIT ERROR:", e)
+            print("UME EXIT ERROR:", get_exception(e))
 
         self.core.cleanup_session(context)
         session.monitor_running = False
@@ -146,7 +157,7 @@ class EditState(UME_P_EditModeState):
                     self.exit(ctx)
 
             except Exception as e:
-                print("UME MONITOR:", e)
+                print("UME MONITOR ERROR:", get_exception(e))
 
             return None
         else:

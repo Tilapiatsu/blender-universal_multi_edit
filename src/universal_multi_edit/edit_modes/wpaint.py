@@ -4,13 +4,6 @@ from ..protocol import UME_P_Session
 
 from .edit_mode import UME_EditMode
 
-NAME = "__UME_WEIGHT__"
-
-
-def active_group(obj: UME_SafeObject):
-    vg = obj.object.vertex_groups.active
-    return vg.name if vg else obj.object.vertex_groups.new(name=NAME).name
-
 
 class Mode(UME_EditMode):
     name: str = "WEIGHT_PAINT"
@@ -18,7 +11,6 @@ class Mode(UME_EditMode):
     def create_proxy(self, context, objects: list[UME_SafeObject], session) -> UME_SafeObject:
         me = bpy.data.meshes.new("UME_WPaint")
         bm = bmesh.new()
-        session.set("wpaint_meta", {})
         session.set("original_vertexweight", {})
 
         self._init_offsets()
@@ -29,7 +21,7 @@ class Mode(UME_EditMode):
 
             self._store_object_offsets(obj, session)
 
-            self._store_object_weights(obj, session, False)
+            self._store_object_weights(obj, session)
 
             vmap = {}
             src = bmesh.new()
@@ -68,10 +60,11 @@ class Mode(UME_EditMode):
         self._transfer(context, session, proxy, transfer_back=True)
 
     def _transfer(self, context, session: UME_P_Session, proxy: UME_SafeObject, transfer_back: bool = True) -> None:
+        if not proxy.object:
+            return
+
         for topo in self._iter_topology_objects(session):
             obj = topo["object"]
-            if not proxy.object:
-                return
 
             if not obj or not obj.object:
                 continue
@@ -84,7 +77,7 @@ class Mode(UME_EditMode):
                 dst = proxy
 
             if transfer_back:
-                self._store_object_weights(src, session, transfer_back)
+                self._store_object_weights(src, session)
 
             originial_weight = session["original_vertexweight"].get(src.name)
 
@@ -116,4 +109,5 @@ class Mode(UME_EditMode):
                 if w.name not in src.vertex_groups:
                     self._remove_vertex_group(dst, w.name)
 
-            # dst.vertex_groups.active = dst.vertex_groups.get(originial_weight["active"])
+            if originial_weight["active"] in dst.vertex_groups:
+                dst.vertex_groups.active = dst.vertex_groups.get(originial_weight["active"])
