@@ -134,6 +134,9 @@ class Mode(UME_EditMode):
             if not obj.object:
                 continue
 
+            src = proxy if transfer_back else obj
+            dst = obj if transfer_back else proxy
+
             multires = self._get_multires(obj)
 
             if multires:
@@ -147,15 +150,15 @@ class Mode(UME_EditMode):
                 )
 
             else:
-                if self._has_shape_keys(obj) or transfer_back:
-                    self._transfer_shape_keys(session, proxy, obj, topo, transfer_back)
-                else:
+                if not self._has_shape_keys(src):
                     self._transfer_vertex_positions(
                         proxy,
                         obj,
                         topo,
                         transfer_back,
                     )
+                elif self._has_shape_keys(src) or transfer_back:
+                    self._transfer_shape_keys(session, proxy, obj, topo, transfer_back)
 
             obj.data.update()
 
