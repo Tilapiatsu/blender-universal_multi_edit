@@ -117,32 +117,43 @@ class Mode(UME_EditMode):
                 src_color = src.data.color_attributes.get(src_attr_name)
                 dst_color = dst.data.color_attributes.get(dst_attr_name)
 
-                print(src.name, dst.name, "src=" + src_attr_name, "dst=" + dst_attr_name, attr_type, attr_domain)
+                added_color = {}
 
                 if src_color is None:
-                    print(f"not {src_attr_name}")
                     self._remove_vertex_color(dst, c_name)
                     continue
 
                 if not transfer_back:
                     if not dst_color:
                         dst_color = self._create_vertex_color(dst, dst_attr_name, attr_type, attr_domain)
+                        if dst.name not in added_color:
+                            added_color[dst.name] = []
+                        added_color[dst.name].append(dst_color.name)
                     self._transfer_vertex_colors(src_color, dst_color, topo, attr_type, transfer_back=transfer_back)
 
                 else:
+                    # TODO: Fix _is_vertex_color_modified : only one object gets transfered back properly
                     # if self._is_vertex_color_modified(
                     #     session, topo, dst, src, dst_attr_name, attr_type, attr_domain, transfer_back=transfer_back
                     # ):
                     if True:
                         if dst_color is None:
                             dst_color = self._create_vertex_color(dst, dst_attr_name, attr_type, attr_domain)
+                            if dst.name not in added_color:
+                                added_color[dst.name] = []
+                            added_color[dst.name].append(dst_color.name)
+
                         self._transfer_vertex_colors(src_color, dst_color, topo, attr_type, transfer_back=transfer_back)
 
                 dst.object.data.update()
 
-            for w in dst.vertex_groups:
-                if w.name not in src.vertex_groups:
-                    self._remove_vertex_group(dst, w.name)
+            if transfer_back:
+                for c in dst.data.color_attributes:
+                    attr_name = f"{c.name}_{getattr(c, 'data_type', 'float_color')}"
+                    if attr_name not in src.data.color_attributes:
+                        if dst.name in added_color.keys() and c.name in added_color[dst.name]:
+                            continue
+                        self._remove_vertex_color(dst, c.name)
 
             if original_color["active"] and original_color["active"] in dst.data.color_attributes:
                 dst.data.color_attributes.active = dst.data.color_attributes.get(original_color["active"])

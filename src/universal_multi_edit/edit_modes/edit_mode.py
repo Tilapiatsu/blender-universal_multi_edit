@@ -796,7 +796,6 @@ class UME_EditMode(UME_P_EditMode):
                 continue
 
             original_color = original["values"][src_idx]
-            print(original_color)
 
             if not original_color:
                 continue
@@ -804,9 +803,7 @@ class UME_EditMode(UME_P_EditMode):
             delta = dst_value.delta(original_color)
             max_delta = max_delta.max(delta)
 
-            print(max_delta)
             if max_delta > threshold_color:
-                print("modified")
                 return True
 
         return False
@@ -815,11 +812,9 @@ class UME_EditMode(UME_P_EditMode):
         self, src: UME_SafeObject, dst: UME_SafeObject, topo, attr_type: str, transfer_back: bool = False
     ) -> None:
         if attr_type == "BYTE_COLOR":
-            print("transfer byte")
             self._transfer_byte_colors(src, dst, topo, transfer_back=transfer_back)
 
         else:
-            print("transfer float")
             self._transfer_float_colors(src, dst, topo, transfer_back=transfer_back)
 
     def _store_object_color(self, obj: UME_SafeObject, session: UME_P_Session, transfer_back=False):
