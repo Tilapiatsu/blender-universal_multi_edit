@@ -124,6 +124,7 @@ class Mode(UME_EditMode):
                     continue
 
                 if not transfer_back:
+                    print(src.name, c_name)
                     if not dst_color:
                         dst_color = self._create_vertex_color(dst, dst_attr_name, attr_type, attr_domain)
                         if dst.name not in added_color:

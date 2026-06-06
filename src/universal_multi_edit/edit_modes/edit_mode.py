@@ -287,18 +287,16 @@ class UME_EditMode(UME_P_EditMode):
     # ---------------------------------------------------------
 
     def _transfer_float_colors(self, src_attr, dst_attr, topo: dict, transfer_back: bool = True):
-        if transfer_back:
-            local_size = len(dst_attr.data)
-            proxy_size = len(src_attr.data)
-        else:
-            local_size = len(src_attr.data)
-            proxy_size = len(dst_attr.data)
-        for proxy_loop, local_loop in self._iter_loop_range(topo):
-            if proxy_loop >= proxy_size or local_loop >= local_size:
+        src_size = len(src_attr.data)
+        dst_size = len(dst_attr.data)
+
+        for proxy_index, local_index in self._iter_loop_range(topo):
+            src_index = proxy_index if transfer_back else local_index
+            dst_index = local_index if transfer_back else proxy_index
+            if src_index >= src_size or dst_index >= dst_size:
+                print(f"out of bound {src_index} > {src_size}, {dst_index} > {dst_size}")
                 break
-            dst_attr.data[local_loop if transfer_back else proxy_loop].color = src_attr.data[
-                proxy_loop if transfer_back else local_loop
-            ].color
+            dst_attr.data[dst_index].color = src_attr.data[src_index].color
 
     # ---------------------------------------------------------
     # TRANSFER BYTE COLORS
@@ -787,12 +785,15 @@ class UME_EditMode(UME_P_EditMode):
                             else dst_color.data[dst_idx].color_srgb
                         )
                     )
+                    print("dst_color_exist | ", dst_value[0], dst_value[1], dst_value[2], dst_value[3])
                 else:
                     dst_value = UME_Color((0.0, 0.0, 0.0, 0.0))
             except RuntimeError:
                 dst_value = UME_Color((0.0, 0.0, 0.0, 0.0))
 
             if src_idx not in original["values"].keys():
+                print(f"{src_idx} not in range")
+                print(original["values"].keys())
                 continue
 
             original_color = original["values"][src_idx]
@@ -804,6 +805,7 @@ class UME_EditMode(UME_P_EditMode):
             max_delta = max_delta.max(delta)
 
             if max_delta > threshold_color:
+                print("modified", max_delta)
                 return True
 
         return False
