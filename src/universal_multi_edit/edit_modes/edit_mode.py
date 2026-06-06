@@ -832,8 +832,12 @@ class UME_EditMode(UME_P_EditMode):
                 session["original_vertexcolor"][obj.name]["active"] = c.name
 
             attr_type = getattr(c, "data_type", "FLOAT_COLOR")
+            attr_name = self._get_color_attribute_name(c.name, c.domain, attr_type, transfer_back)
+            id_name = attr_name
+            if transfer_back:
+                id_name = c.name
             values = {
-                "name": self._get_color_attribute_name(c.name, c.domain, attr_type, transfer_back),
+                "name": attr_name,
                 "domain": c.domain,
                 "type": attr_type,
                 "values": {},
@@ -857,7 +861,7 @@ class UME_EditMode(UME_P_EditMode):
                 values["values"][ls.vertex_index] = col
                 # .append((obj.name, c.domain if attr else "CORNER", ls.vert.index, ls.index, col))
 
-            session["original_vertexcolor"][obj.name]["colors"][c.name] = values
+            session["original_vertexcolor"][obj.name]["colors"][id_name] = values
 
     @staticmethod
     def _byte_to_float(c):

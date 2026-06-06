@@ -113,12 +113,21 @@ class Mode(UME_EditMode):
             for c_name in original_color["colors"].keys():
                 attr_type = original_color["colors"][c_name]["type"]
                 attr_domain = original_color["colors"][c_name]["domain"]
-                src_attr_name = c_name
-                dst_attr_name = self._get_color_attribute_name(c_name, attr_domain, attr_type, transfer_back)
+                src_attr_name = (
+                    c_name
+                    if transfer_back
+                    else self._get_color_attribute_name(c_name, attr_domain, attr_type, not transfer_back)
+                )
+                dst_attr_name = (
+                    self._get_color_attribute_name(c_name, attr_domain, attr_type, transfer_back)
+                    if transfer_back
+                    else c_name
+                )
                 src_color = src.data.color_attributes.get(src_attr_name)
                 dst_color = dst.data.color_attributes.get(dst_attr_name)
 
                 added_color = {}
+                # print(c_name, src_attr_name, dst_attr_name)
 
                 if src_color is None:
                     self._remove_vertex_color(dst, c_name)
