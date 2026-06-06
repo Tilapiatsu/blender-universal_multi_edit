@@ -49,30 +49,31 @@ class Mode(UME_EditMode):
             self._store_object_offsets(obj, session)
             self._store_object_color(obj, session, transfer_back=False)
 
+            vmap = {}
             src = bmesh.new()
             src.from_mesh(obj.data)
             src.transform(obj.matrix_world)
-            src.faces.ensure_lookup_table()
-            src.verts.ensure_lookup_table()
-
-            vmap = {v: bm.verts.new(v.co) for v in src.verts}
+            for v in src.verts:
+                nv = bm.verts.new(v.co)
+                vmap[v] = nv
             bm.verts.ensure_lookup_table()
             for f in src.faces:
                 try:
                     bm.faces.new([vmap[v] for v in f.verts])
                 except:
-                    continue
-
+                    pass
             src.free()
 
             self._apply_offsets(obj)
 
         bm.to_mesh(me)
         bm.free()
+
         proxy = bpy.data.objects.new("UME_Proxy", me)
         context.scene.collection.objects.link(proxy)
 
         session.proxy = proxy
+
         self._transfer(context, session, session.proxy, transfer_back=False)
 
         return session.proxy
@@ -113,7 +114,7 @@ class Mode(UME_EditMode):
                 attr_type = original_color["colors"][c_name]["type"]
                 attr_domain = original_color["colors"][c_name]["domain"]
                 src_attr_name = c_name
-                dst_attr_name = original_color["colors"][c_name]["name"] if transfer_back else f"{c_name}_{attr_type}"
+                dst_attr_name = self._get_color_attribute_name(c_name, attr_domain, attr_type, transfer_back)
                 src_color = src.data.color_attributes.get(src_attr_name)
                 dst_color = dst.data.color_attributes.get(dst_attr_name)
 
@@ -124,13 +125,14 @@ class Mode(UME_EditMode):
                     continue
 
                 if not transfer_back:
-                    print(src.name, c_name)
                     if not dst_color:
                         dst_color = self._create_vertex_color(dst, dst_attr_name, attr_type, attr_domain)
                         if dst.name not in added_color:
                             added_color[dst.name] = []
                         added_color[dst.name].append(dst_color.name)
-                    self._transfer_vertex_colors(src_color, dst_color, topo, attr_type, transfer_back=transfer_back)
+                    self._transfer_vertex_colors(
+                        src_color, dst_color, topo, attr_type, attr_domain, transfer_back=transfer_back
+                    )
 
                 else:
                     # TODO: Fix _is_vertex_color_modified : only one object gets transfered back properly
@@ -144,13 +146,16 @@ class Mode(UME_EditMode):
                                 added_color[dst.name] = []
                             added_color[dst.name].append(dst_color.name)
 
-                        self._transfer_vertex_colors(src_color, dst_color, topo, attr_type, transfer_back=transfer_back)
+                        self._transfer_vertex_colors(
+                            src_color, dst_color, topo, attr_type, attr_domain, transfer_back=transfer_back
+                        )
 
                 dst.object.data.update()
 
             if transfer_back:
                 for c in dst.data.color_attributes:
-                    attr_name = f"{c.name}_{getattr(c, 'data_type', 'float_color')}"
+                    attr_type = getattr(c, "data_type", "float_color")
+                    attr_name = self._get_color_attribute_name(c.name, c.domain, attr_type, False)
                     if attr_name not in src.data.color_attributes:
                         if dst.name in added_color.keys() and c.name in added_color[dst.name]:
                             continue

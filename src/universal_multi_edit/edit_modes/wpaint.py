@@ -20,7 +20,6 @@ class Mode(UME_EditMode):
                 continue
 
             self._store_object_offsets(obj, session)
-
             self._store_object_weights(obj, session)
 
             vmap = {}

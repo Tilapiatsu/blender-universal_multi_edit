@@ -286,36 +286,31 @@ class UME_EditMode(UME_P_EditMode):
     # TRANSFER FLOAT COLORS
     # ---------------------------------------------------------
 
-    def _transfer_float_colors(self, src_attr, dst_attr, topo: dict, transfer_back: bool = True):
-        src_size = len(src_attr.data)
-        dst_size = len(dst_attr.data)
+    def _transfer_float_colors(self, src_attr, dst_attr, topo: dict, attr_domain: str, transfer_back: bool = True):
+        if attr_domain == "CORNER":
+            iter_range = self._iter_loop_range
+        else:
+            iter_range = self._iter_vertex_range
 
-        for proxy_index, local_index in self._iter_loop_range(topo):
+        for proxy_index, local_index in iter_range(topo):
             src_index = proxy_index if transfer_back else local_index
             dst_index = local_index if transfer_back else proxy_index
-            if src_index >= src_size or dst_index >= dst_size:
-                print(f"out of bound {src_index} > {src_size}, {dst_index} > {dst_size}")
-                break
             dst_attr.data[dst_index].color = src_attr.data[src_index].color
 
     # ---------------------------------------------------------
     # TRANSFER BYTE COLORS
     # ---------------------------------------------------------
 
-    def _transfer_byte_colors(self, src_attr, dst_attr, topo: dict, transfer_back: bool = True):
-        if transfer_back:
-            local_size = len(dst_attr.data)
-            proxy_size = len(src_attr.data)
+    def _transfer_byte_colors(self, src_attr, dst_attr, topo: dict, attr_domain: str, transfer_back: bool = True):
+        if attr_domain == "CORNER":
+            iter_range = self._iter_loop_range
         else:
-            local_size = len(src_attr.data)
-            proxy_size = len(dst_attr.data)
+            iter_range = self._iter_vertex_range
 
-        for proxy_loop, local_loop in self._iter_loop_range(topo):
-            if proxy_loop >= proxy_size or local_loop >= local_size:
-                break
-            dst_attr.data[local_loop if transfer_back else proxy_loop].color_srgb = src_attr.data[
-                proxy_loop if transfer_back else local_loop
-            ].color_srgb
+        for proxy_index, local_index in iter_range(topo):
+            src_index = proxy_index if transfer_back else local_index
+            dst_index = local_index if transfer_back else proxy_index
+            dst_attr.data[dst_index].color_srgb = src_attr.data[src_index].color_srgb
 
     # ---------------------------------------------------------
     # TRANSFER VERTEX WEIGHTS
@@ -811,13 +806,19 @@ class UME_EditMode(UME_P_EditMode):
         return False
 
     def _transfer_vertex_colors(
-        self, src: UME_SafeObject, dst: UME_SafeObject, topo, attr_type: str, transfer_back: bool = False
+        self,
+        src: UME_SafeObject,
+        dst: UME_SafeObject,
+        topo,
+        attr_type: str,
+        attr_domain: str,
+        transfer_back: bool = False,
     ) -> None:
         if attr_type == "BYTE_COLOR":
-            self._transfer_byte_colors(src, dst, topo, transfer_back=transfer_back)
+            self._transfer_byte_colors(src, dst, topo, attr_domain, transfer_back=transfer_back)
 
         else:
-            self._transfer_float_colors(src, dst, topo, transfer_back=transfer_back)
+            self._transfer_float_colors(src, dst, topo, attr_domain, transfer_back=transfer_back)
 
     def _store_object_color(self, obj: UME_SafeObject, session: UME_P_Session, transfer_back=False):
         for c in obj.data.color_attributes:
@@ -832,7 +833,7 @@ class UME_EditMode(UME_P_EditMode):
 
             attr_type = getattr(c, "data_type", "FLOAT_COLOR")
             values = {
-                "name": c.name.split(f"_{attr_type}")[0] if transfer_back else f"{c.name}_{attr_type}",
+                "name": self._get_color_attribute_name(c.name, c.domain, attr_type, transfer_back),
                 "domain": c.domain,
                 "type": attr_type,
                 "values": {},
@@ -866,6 +867,9 @@ class UME_EditMode(UME_P_EditMode):
             float(c[2]),
             float(c[3]),
         )
+
+    def _get_color_attribute_name(self, name: str, attr_domain: str, attr_type: str, is_proxy: bool):
+        return name.split(f"_{attr_type}_{attr_domain}")[0] if is_proxy else f"{name}_{attr_type}_{attr_domain}"
 
     def _is_active_vertex_color(self, obj: UME_SafeObject, name: str) -> bool:
         return False if obj.data.color_attributes.active is None else obj.data.color_attributes.active.name == name
