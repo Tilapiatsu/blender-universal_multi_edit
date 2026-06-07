@@ -143,11 +143,10 @@ class Mode(UME_EditMode):
                     )
 
                 else:
-                    # TODO: Fix _is_vertex_color_modified : only one object gets transfered back properly
-                    # if self._is_vertex_color_modified(
-                    #     session, topo, dst, src, dst_attr_name, attr_type, attr_domain, transfer_back=transfer_back
-                    # ):
-                    if True:
+                    if self._is_vertex_color_modified(
+                        session, topo, dst, src, src_attr_name, attr_type, attr_domain, transfer_back=transfer_back
+                    ):
+                        # if True:
                         if dst_color is None:
                             dst_color = self._create_vertex_color(dst, dst_attr_name, attr_type, attr_domain)
                             if dst.name not in added_color:

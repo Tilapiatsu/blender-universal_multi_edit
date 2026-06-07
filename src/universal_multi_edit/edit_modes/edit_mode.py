@@ -616,7 +616,7 @@ class UME_EditMode(UME_P_EditMode):
         src_obj: bpy.types.Object,
         key_name: str,
         is_basis: bool,
-        threshold=0.0001,
+        threshold=0.000001,
     ):
         if key_name in session["original_shapekey"][src_obj.name].keys():
             old = session["original_shapekey"][src_obj.name][key_name]
@@ -672,7 +672,7 @@ class UME_EditMode(UME_P_EditMode):
         src_obj: bpy.types.Object,
         group_name: str,
         transfer_back=True,
-        threshold=0.0001,
+        threshold=0.000001,
     ):
         if group_name in session["original_vertexweight"][src_obj.name]["weights"].keys():
             original = session["original_vertexweight"][src_obj.name]["weights"][group_name]
@@ -755,19 +755,30 @@ class UME_EditMode(UME_P_EditMode):
         attr_type,
         attr_domain,
         transfer_back=True,
-        threshold=0.0001,
+        threshold=0.000001,
     ):
         if color_name in session["original_vertexcolor"][src_obj.name]["colors"].keys():
             original = session["original_vertexcolor"][src_obj.name]["colors"][color_name]
         else:
             original = {"values": {i: UME_Color((0.0, 0.0, 0.0, 0.0))} for i in range(1)}
 
-        dst_color = dst_obj.data.color_attributes.get(color_name)
+        dst_color = dst_obj.data.color_attributes.get(
+            self._get_color_attribute_name(color_name, attr_domain, attr_type, transfer_back)
+        )
         dst_color_exist = dst_color is not None
         max_delta = UME_Color((0.0, 0.0, 0.0, 0.0))
         threshold_color = UME_Color((threshold, threshold, threshold, threshold))
 
-        for proxy_vert, local_vert in self._iter_vertex_range(topo):
+        if attr_domain == "CORNER":
+            iter_range = self._iter_loop_range
+        elif attr_domain == "POINT":
+            iter_range = self._iter_vertex_range
+        else:
+            # Invalid domain
+            print("invalid domain", attr_domain)
+            return False
+
+        for proxy_vert, local_vert in iter_range(topo):
             src_idx = proxy_vert if transfer_back else local_vert
             dst_idx = local_vert if transfer_back else proxy_vert
 
@@ -780,27 +791,20 @@ class UME_EditMode(UME_P_EditMode):
                             else dst_color.data[dst_idx].color_srgb
                         )
                     )
-                    print("dst_color_exist | ", dst_value[0], dst_value[1], dst_value[2], dst_value[3])
                 else:
                     dst_value = UME_Color((0.0, 0.0, 0.0, 0.0))
             except RuntimeError:
                 dst_value = UME_Color((0.0, 0.0, 0.0, 0.0))
 
             if src_idx not in original["values"].keys():
-                print(f"{src_idx} not in range")
-                print(original["values"].keys())
                 continue
 
             original_color = original["values"][src_idx]
-
-            if not original_color:
-                continue
 
             delta = dst_value.delta(original_color)
             max_delta = max_delta.max(delta)
 
             if max_delta > threshold_color:
-                print("modified", max_delta)
                 return True
 
         return False
@@ -845,8 +849,8 @@ class UME_EditMode(UME_P_EditMode):
 
             for ls in obj.data.loops:
                 # support POINT and CORNER domains
+                src_idx = ls.vertex_index if c.domain == "POINT" else ls.index
                 if c:
-                    src_idx = ls.vertex_index if c.domain == "POINT" else ls.index
                     if src_idx < len(c.data):
                         raw = c.data[src_idx].color[:]
                         if values["type"] == "BYTE_COLOR":
@@ -858,7 +862,7 @@ class UME_EditMode(UME_P_EditMode):
                 else:
                     col = (0, 0, 0, 0)
 
-                values["values"][ls.vertex_index] = col
+                values["values"][src_idx] = col
                 # .append((obj.name, c.domain if attr else "CORNER", ls.vert.index, ls.index, col))
 
             session["original_vertexcolor"][obj.name]["colors"][id_name] = values
