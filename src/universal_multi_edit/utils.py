@@ -40,6 +40,8 @@ def apply_shape_key_delta(obj: bpy.types.Object, deltas: dict):
 def get_multires(obj: bpy.types.Object):
     for mod in obj.modifiers:
         if mod.type == "MULTIRES":
+            if not mod.sculpt_levels:
+                continue
             return mod
     return None
 

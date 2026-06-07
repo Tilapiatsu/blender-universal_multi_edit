@@ -6,17 +6,6 @@ from ..safe_object import (
 from ..protocol import UME_P_Session
 from .edit_mode import UME_EditMode
 
-NAME = "__UME_COLOR__"
-
-
-def byte_to_float(c):
-    return (
-        float(c[0]),
-        float(c[1]),
-        float(c[2]),
-        float(c[3]),
-    )
-
 
 def float_to_byte(c):
 
@@ -41,17 +30,6 @@ def linear_to_srgb(x):
     return 1.055 * (x ** (1.0 / 2.4)) - 0.055
 
 
-def _attr_type(attr):
-    # Blender version compatibility
-    return getattr(attr, "data_type", getattr(attr, "type", "FLOAT_COLOR"))
-
-
-def _ensure_proxy_attr(me: bpy.types.Mesh) -> bpy.types.AttributeGroupMesh:
-    while me.color_attributes:
-        me.color_attributes.remove(me.color_attributes[0])
-    return me.color_attributes.new(name=NAME, domain="CORNER", type="FLOAT_COLOR")
-
-
 class Mode(UME_EditMode):
     name: str = "VERTEX_PAINT"
 
@@ -60,8 +38,7 @@ class Mode(UME_EditMode):
             return
         me = bpy.data.meshes.new("UME_VPaint")
         bm = bmesh.new()
-        session.set("map", [])
-        session.set("attr_meta", {})
+        session.set("original_vertexcolor", {})
 
         self._init_offsets()
 
@@ -70,59 +47,33 @@ class Mode(UME_EditMode):
                 continue
 
             self._store_object_offsets(obj, session)
+            self._store_object_color(obj, session, transfer_back=False)
+
+            vmap = {}
             src = bmesh.new()
             src.from_mesh(obj.data)
             src.transform(obj.matrix_world)
-            src.faces.ensure_lookup_table()
-            src.verts.ensure_lookup_table()
-            attr = obj.data.color_attributes.active_color if obj.data.color_attributes else None
-            if attr:
-                session["attr_meta"][obj.name] = {
-                    "name": attr.name,
-                    "domain": attr.domain,
-                    "type": _attr_type(attr),
-                }
-            else:
-                session["attr_meta"][obj.name] = {
-                    "name": "Color",
-                    "domain": "CORNER",
-                    "type": "FLOAT_COLOR",
-                }
-            vmap = {v: bm.verts.new(v.co) for v in src.verts}
+            for v in src.verts:
+                nv = bm.verts.new(v.co)
+                vmap[v] = nv
             bm.verts.ensure_lookup_table()
             for f in src.faces:
                 try:
                     bm.faces.new([vmap[v] for v in f.verts])
                 except:
-                    continue
-                for ls in f.loops:
-                    # support POINT and CORNER domains
-                    if attr:
-                        src_idx = ls.vert.index if attr.domain == "POINT" else ls.index
-                        if src_idx < len(attr.data):
-                            raw = attr.data[src_idx].color[:]
-                            if session["attr_meta"][obj.name]["type"] == "BYTE_COLOR":
-                                col = byte_to_float(raw)
-                            else:
-                                col = raw
-                        else:
-                            col = (0, 0, 0, 0)
-                    else:
-                        col = (0, 0, 0, 0)
-
-                    session["map"].append((obj.name, attr.domain if attr else "CORNER", ls.vert.index, ls.index, col))
-
+                    pass
             src.free()
 
             self._apply_offsets(obj)
 
         bm.to_mesh(me)
         bm.free()
+
         proxy = bpy.data.objects.new("UME_Proxy", me)
         context.scene.collection.objects.link(proxy)
-        _ensure_proxy_attr(me)
 
         session.proxy = proxy
+
         self._transfer(context, session, session.proxy, transfer_back=False)
 
         return session.proxy
@@ -138,59 +89,88 @@ class Mode(UME_EditMode):
         if not proxy.object:
             return
 
-        src = proxy.data.color_attributes.get(NAME)
-
-        if not src:
-            return
-
         for topo in self._iter_topology_objects(session):
             obj = topo["object"]
 
-            if not obj:
+            if not obj or not obj.object:
                 continue
 
-            me = obj.data
-            meta = session["attr_meta"].get(obj.name)
+            if transfer_back:
+                src = proxy
+                dst = obj
+            else:
+                src = obj
+                dst = proxy
 
-            if not meta:
+            if transfer_back:
+                self._store_object_color(src, session, transfer_back=transfer_back)
+
+            original_color = session["original_vertexcolor"].get(src.name)
+
+            if not original_color and not transfer_back:
                 continue
 
-            attr_name = meta["name"]
-            attr_type = meta["type"]
-            domain = meta["domain"]
+            for c_name in original_color["colors"].keys():
+                attr_type = original_color["colors"][c_name]["type"]
+                attr_domain = original_color["colors"][c_name]["domain"]
+                src_attr_name = (
+                    c_name
+                    if transfer_back
+                    else self._get_color_attribute_name(c_name, attr_domain, attr_type, not transfer_back)
+                )
+                dst_attr_name = (
+                    self._get_color_attribute_name(c_name, attr_domain, attr_type, transfer_back)
+                    if transfer_back
+                    else c_name
+                )
+                src_color = src.data.color_attributes.get(src_attr_name)
+                dst_color = dst.data.color_attributes.get(dst_attr_name)
 
-            # -------------------------------------------------
-            # recover/create destination attr
-            # -------------------------------------------------
+                added_color = {}
+
+                if src_color is None:
+                    self._remove_vertex_color(dst, c_name)
+                    continue
+
+                if not transfer_back:
+                    if not dst_color:
+                        dst_color = self._create_vertex_color(dst, dst_attr_name, attr_type, attr_domain)
+                        if dst.name not in added_color:
+                            added_color[dst.name] = []
+                        added_color[dst.name].append(dst_color.name)
+                    self._transfer_vertex_colors(
+                        src_color, dst_color, topo, attr_type, attr_domain, transfer_back=transfer_back
+                    )
+
+                else:
+                    if self._is_vertex_color_modified(
+                        session, topo, dst, src, src_attr_name, attr_type, attr_domain, transfer_back=transfer_back
+                    ):
+                        # if True:
+                        if dst_color is None:
+                            dst_color = self._create_vertex_color(dst, dst_attr_name, attr_type, attr_domain)
+                            if dst.name not in added_color:
+                                added_color[dst.name] = []
+                            added_color[dst.name].append(dst_color.name)
+
+                        if src_color.domain != dst_color.domain or src_color.data_type != dst_color.data_type:
+                            continue
+
+                        self._transfer_vertex_colors(
+                            src_color, dst_color, topo, attr_type, attr_domain, transfer_back=transfer_back
+                        )
+
+                dst.object.data.update()
 
             if transfer_back:
-                src = proxy.data.color_attributes.get(NAME)
-                dst = me.color_attributes.get(attr_name)
-                if not dst:
-                    dst = me.color_attributes.new(name=attr_name, type=attr_type, domain=domain)
-            else:
-                src = me.color_attributes.get(attr_name)
-                dst = proxy.data.color_attributes.get(NAME)
-                if not src:
-                    src = me.color_attributes.new(name=attr_name, type=attr_type, domain=domain)
+                for c in dst.data.color_attributes:
+                    attr_type = getattr(c, "data_type", "float_color")
+                    attr_name = self._get_color_attribute_name(c.name, c.domain, attr_type, False)
+                    if attr_name not in src.data.color_attributes:
+                        if dst.name in added_color.keys() and c.name in added_color[dst.name]:
+                            continue
+                        self._remove_vertex_color(dst, c.name)
 
-            # -------------------------------------------------
-            # transfer
-            # -------------------------------------------------
-
-            if attr_type == "BYTE_COLOR":
-                self._transfer_byte_colors(src, dst, topo, transfer_back=transfer_back)
-
-            else:
-                self._transfer_float_colors(src, dst, topo, transfer_back=transfer_back)
-
-            # -------------------------------------------------
-            # restore active attr
-            # -------------------------------------------------
-
-            if transfer_back:
-                me.color_attributes.active_color = dst
-                me.update()
-            else:
-                proxy.data.color_attributes.active_color = dst
-                proxy.data.update()
+            if original_color["active"] and original_color["active"] in dst.data.color_attributes:
+                dst.data.color_attributes.active = dst.data.color_attributes.get(original_color["active"])
+                dst.data.update()

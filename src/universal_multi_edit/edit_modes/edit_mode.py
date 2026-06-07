@@ -1,10 +1,141 @@
+from __future__ import annotations
 import bpy
-from typing import Tuple
+from typing import Union, Tuple, overload, TypeAlias
 from mathutils import Vector
 
 from ..protocol import UME_P_Session, UME_P_EditMode
 from ..safe_object import UME_SafeObject
 from ..utils import get_multires, select_all
+
+ColorTuple: TypeAlias = tuple[float, float, float, float]
+
+
+class UME_Color:
+    def __init__(self, color: ColorTuple) -> None:
+        self.color = color
+
+    def __getitem__(self, index):
+        if index > len(self.color) or index < 0:
+            raise IndexError
+        return self.color[index]
+
+    @overload
+    def __eq__(self, color: UME_Color) -> bool: ...
+
+    @overload
+    def __eq__(self, color: ColorTuple) -> bool: ...
+
+    def __eq__(self, color: object) -> bool:
+        if not isinstance(color, (UME_Color, tuple)):
+            return NotImplemented
+
+        return (
+            self.color[0] == color[0]
+            and self.color[1] == color[1]
+            and self.color[2] == color[2]
+            and self.color[3] == color[3]
+        )
+
+    @overload
+    def __gt__(self, color: UME_Color) -> bool: ...
+
+    @overload
+    def __gt__(self, color: ColorTuple) -> bool: ...
+
+    def __gt__(self, color: object) -> bool:
+        if not isinstance(color, (UME_Color, tuple)):
+            return NotImplemented
+
+        return (
+            self.color[0] > color[0] or self.color[1] > color[1] or self.color[2] > color[2] or self.color[3] > color[3]
+        )
+
+    @overload
+    def __lt__(self, color: UME_Color) -> bool: ...
+
+    @overload
+    def __lt__(self, color: ColorTuple) -> bool: ...
+
+    def __lt__(self, color: object) -> bool:
+        if not isinstance(color, (UME_Color, tuple)):
+            return NotImplemented
+
+        return (
+            self.color[0] < color[0] or self.color[1] < color[1] or self.color[2] < color[2] or self.color[3] < color[3]
+        )
+
+    @overload
+    def __ge__(self, color: UME_Color) -> bool: ...
+
+    @overload
+    def __ge__(self, color: ColorTuple) -> bool: ...
+
+    def __ge__(self, color: object) -> bool:
+        if not isinstance(color, (UME_Color, tuple)):
+            return NotImplemented
+
+        return (
+            self.color[0] >= color[0]
+            or self.color[1] >= color[1]
+            or self.color[2] >= color[2]
+            or self.color[3] >= color[3]
+        )
+
+    @overload
+    def __le__(self, color: UME_Color) -> bool: ...
+
+    @overload
+    def __le__(self, color: ColorTuple) -> bool: ...
+
+    def __le__(self, color: object) -> bool:
+        if not isinstance(color, (UME_Color, tuple)):
+            return NotImplemented
+
+        return (
+            self.color[0] <= color[0]
+            or self.color[1] <= color[1]
+            or self.color[2] <= color[2]
+            or self.color[3] <= color[3]
+        )
+
+    def __repr__(self) -> str:
+        return str(self.color)
+
+    @overload
+    def max(self, color: UME_Color) -> UME_Color: ...
+
+    @overload
+    def max(self, color: ColorTuple) -> UME_Color: ...
+
+    def max(self, color: object) -> UME_Color:
+        if not isinstance(color, (UME_Color, tuple)):
+            return NotImplemented
+        return UME_Color(
+            (
+                max(self.color[0], color[0]),
+                max(self.color[1], color[1]),
+                max(self.color[2], color[2]),
+                max(self.color[3], color[3]),
+            )
+        )
+
+    @overload
+    def delta(self, color: UME_Color) -> UME_Color: ...
+
+    @overload
+    def delta(self, color: ColorTuple) -> UME_Color: ...
+
+    def delta(self, color: object) -> UME_Color:
+        if not isinstance(color, (UME_Color, tuple)):
+            return NotImplemented
+        return UME_Color(
+            (
+                abs(self.color[0] - color[0]),
+                abs(self.color[1] - color[1]),
+                abs(self.color[2] - color[2]),
+                abs(self.color[3] - color[3]),
+            )
+        )
 
 
 class UME_EditMode(UME_P_EditMode):
@@ -155,38 +286,31 @@ class UME_EditMode(UME_P_EditMode):
     # TRANSFER FLOAT COLORS
     # ---------------------------------------------------------
 
-    def _transfer_float_colors(self, src_attr, dst_attr, topo: dict, transfer_back: bool = True):
-        if transfer_back:
-            local_size = len(dst_attr.data)
-            proxy_size = len(src_attr.data)
+    def _transfer_float_colors(self, src_attr, dst_attr, topo: dict, attr_domain: str, transfer_back: bool = True):
+        if attr_domain == "CORNER":
+            iter_range = self._iter_loop_range
         else:
-            local_size = len(src_attr.data)
-            proxy_size = len(dst_attr.data)
-        for proxy_loop, local_loop in self._iter_loop_range(topo):
-            if proxy_loop >= proxy_size or local_loop >= local_size:
-                break
-            dst_attr.data[local_loop if transfer_back else proxy_loop].color = src_attr.data[
-                proxy_loop if transfer_back else local_loop
-            ].color
+            iter_range = self._iter_vertex_range
+
+        for proxy_index, local_index in iter_range(topo):
+            src_index = proxy_index if transfer_back else local_index
+            dst_index = local_index if transfer_back else proxy_index
+            dst_attr.data[dst_index].color = src_attr.data[src_index].color
 
     # ---------------------------------------------------------
     # TRANSFER BYTE COLORS
     # ---------------------------------------------------------
 
-    def _transfer_byte_colors(self, src_attr, dst_attr, topo: dict, transfer_back: bool = True):
-        if transfer_back:
-            local_size = len(dst_attr.data)
-            proxy_size = len(src_attr.data)
+    def _transfer_byte_colors(self, src_attr, dst_attr, topo: dict, attr_domain: str, transfer_back: bool = True):
+        if attr_domain == "CORNER":
+            iter_range = self._iter_loop_range
         else:
-            local_size = len(src_attr.data)
-            proxy_size = len(dst_attr.data)
+            iter_range = self._iter_vertex_range
 
-        for proxy_loop, local_loop in self._iter_loop_range(topo):
-            if proxy_loop >= proxy_size or local_loop >= local_size:
-                break
-            dst_attr.data[local_loop if transfer_back else proxy_loop].color_srgb = src_attr.data[
-                proxy_loop if transfer_back else local_loop
-            ].color_srgb
+        for proxy_index, local_index in iter_range(topo):
+            src_index = proxy_index if transfer_back else local_index
+            dst_index = local_index if transfer_back else proxy_index
+            dst_attr.data[dst_index].color_srgb = src_attr.data[src_index].color_srgb
 
     # ---------------------------------------------------------
     # TRANSFER VERTEX WEIGHTS
@@ -319,6 +443,9 @@ class UME_EditMode(UME_P_EditMode):
     def _remove_deleted_shape_key(self, src_key_blocks, dst_obj, dst_keys):
         to_remove = []
 
+        if not dst_keys:
+            return
+
         for key in dst_keys.key_blocks:
             if not len(src_key_blocks):
                 to_remove.append(key.name)
@@ -415,6 +542,8 @@ class UME_EditMode(UME_P_EditMode):
     def _get_multires(self, obj: UME_SafeObject):
         for mod in obj.modifiers:
             if mod.type == "MULTIRES":
+                if not mod.sculpt_levels:
+                    continue
                 return mod
         return None
 
@@ -428,6 +557,9 @@ class UME_EditMode(UME_P_EditMode):
         old_render = mr.render_levels
 
         level = mr.sculpt_levels
+
+        if level == 0:
+            return obj, False, 0
 
         mr.levels = level
         mr.render_levels = level
@@ -484,7 +616,7 @@ class UME_EditMode(UME_P_EditMode):
         src_obj: bpy.types.Object,
         key_name: str,
         is_basis: bool,
-        threshold=0.0001,
+        threshold=0.000001,
     ):
         if key_name in session["original_shapekey"][src_obj.name].keys():
             old = session["original_shapekey"][src_obj.name][key_name]
@@ -540,7 +672,7 @@ class UME_EditMode(UME_P_EditMode):
         src_obj: bpy.types.Object,
         group_name: str,
         transfer_back=True,
-        threshold=0.0001,
+        threshold=0.000001,
     ):
         if group_name in session["original_vertexweight"][src_obj.name]["weights"].keys():
             original = session["original_vertexweight"][src_obj.name]["weights"][group_name]
@@ -585,53 +717,7 @@ class UME_EditMode(UME_P_EditMode):
         # print(f"removing vertex group{name} in {obj.name}")
         obj.vertex_groups.remove(obj.vertex_groups[name])
 
-    def _has_vertex_color(self, obj: UME_SafeObject) -> bool:
-        return len(obj.data.color_attributes) > 0
-
-    def _create_vertex_color(self, obj, name, type, domain) -> bpy.types.AttributeGroupMesh:
-        return obj.data.color_attributes.new(name=name, type=type, domain=domain)
-
-    def _is_vertex_color_modified(
-        self,
-        session,
-        topo,
-        dst_obj: bpy.types.Object,
-        src_obj: bpy.types.Object,
-        group_name: str,
-        threshold=0.0001,
-    ):
-        if group_name in session["original_vertexcolor"][src_obj.name]["weights"].keys():
-            old = session["original_vertexcolor"][src_obj.name]["weights"][group_name]
-        else:
-            # print(f"{key_name} does not exist in {src_obj.name}")
-            old = [Vector((0, 0, 0)) for _ in range(len(src_obj.data.vertices))]
-
-        new_base = dst_obj.data.vertices
-
-        if not dst_obj.data.shape_keys:
-            return True
-        if dst_obj.data.shape_keys and group_name in dst_obj.data.shape_keys.key_blocks:
-            new = dst_obj.data.shape_keys.key_blocks[group_name].data
-        else:
-            new = new_base
-
-        max_delta = 0.0
-        # print(f"{key_name} in {dst_obj.name}")
-
-        for proxy_vert, local_vert in self._iter_vertex_range(topo):
-            # print("proxy", proxy_vert, new_base[proxy_vert].co - new[proxy_vert].co)
-            # print("old  ", local_vert, old[local_vert])
-            delta = (new_base[proxy_vert].co - new[proxy_vert].co - old[local_vert]).length
-
-            max_delta = max(max_delta, delta)
-
-            if max_delta > threshold:
-                # print(f"{key_name} has changed at index {proxy_vert} | {max_delta}")
-                return True
-
-        return False
-
-    def _store_object_weights(self, obj: UME_SafeObject, session: UME_P_Session, transfer_back: bool = True):
+    def _store_object_weights(self, obj: UME_SafeObject, session: UME_P_Session):
         for vw in obj.vertex_groups:
             if obj.name not in session["original_vertexweight"]:
                 session["original_vertexweight"][obj.name] = {"active": None, "weights": {}}
@@ -649,3 +735,154 @@ class UME_EditMode(UME_P_EditMode):
                     continue
 
             session["original_vertexweight"][obj.name]["weights"][vw.name] = values
+
+    def _has_vertex_color(self, obj: UME_SafeObject) -> bool:
+        return len(obj.data.color_attributes) > 0
+
+    def _create_vertex_color(
+        self, obj: UME_SafeObject, name: str, type: str, domain: str
+    ) -> bpy.types.AttributeGroupMesh:
+        # print(f"create color attribute {name} for {obj.name}")
+        return obj.data.color_attributes.new(name=name, type=type, domain=domain)
+
+    def _is_vertex_color_modified(
+        self,
+        session,
+        topo,
+        dst_obj: bpy.types.Object,
+        src_obj: bpy.types.Object,
+        color_name: str,
+        attr_type,
+        attr_domain,
+        transfer_back=True,
+        threshold=0.000001,
+    ):
+        if color_name in session["original_vertexcolor"][src_obj.name]["colors"].keys():
+            original = session["original_vertexcolor"][src_obj.name]["colors"][color_name]
+        else:
+            original = {"values": {i: UME_Color((0.0, 0.0, 0.0, 0.0))} for i in range(1)}
+
+        dst_color = dst_obj.data.color_attributes.get(
+            self._get_color_attribute_name(color_name, attr_domain, attr_type, transfer_back)
+        )
+        dst_color_exist = dst_color is not None
+        max_delta = UME_Color((0.0, 0.0, 0.0, 0.0))
+        threshold_color = UME_Color((threshold, threshold, threshold, threshold))
+
+        if attr_domain == "CORNER":
+            iter_range = self._iter_loop_range
+        elif attr_domain == "POINT":
+            iter_range = self._iter_vertex_range
+        else:
+            # Invalid domain
+            print("invalid domain", attr_domain)
+            return False
+
+        for proxy_vert, local_vert in iter_range(topo):
+            src_idx = proxy_vert if transfer_back else local_vert
+            dst_idx = local_vert if transfer_back else proxy_vert
+
+            try:
+                if dst_color_exist:
+                    dst_value = UME_Color(
+                        (
+                            dst_color.data[dst_idx].color
+                            if attr_type == "FLOAT_COLOR"
+                            else dst_color.data[dst_idx].color_srgb
+                        )
+                    )
+                else:
+                    dst_value = UME_Color((0.0, 0.0, 0.0, 0.0))
+            except RuntimeError:
+                dst_value = UME_Color((0.0, 0.0, 0.0, 0.0))
+
+            if src_idx not in original["values"].keys():
+                continue
+
+            original_color = original["values"][src_idx]
+
+            delta = dst_value.delta(original_color)
+            max_delta = max_delta.max(delta)
+
+            if max_delta > threshold_color:
+                return True
+
+        return False
+
+    def _transfer_vertex_colors(
+        self,
+        src: UME_SafeObject,
+        dst: UME_SafeObject,
+        topo,
+        attr_type: str,
+        attr_domain: str,
+        transfer_back: bool = False,
+    ) -> None:
+        if attr_type == "BYTE_COLOR":
+            self._transfer_byte_colors(src, dst, topo, attr_domain, transfer_back=transfer_back)
+
+        else:
+            self._transfer_float_colors(src, dst, topo, attr_domain, transfer_back=transfer_back)
+
+    def _store_object_color(self, obj: UME_SafeObject, session: UME_P_Session, transfer_back=False):
+        for c in obj.data.color_attributes:
+            if c.data_type not in ["FLOAT_COLOR", "BYTE_COLOR"]:
+                continue
+
+            if obj.name not in session["original_vertexcolor"]:
+                session["original_vertexcolor"][obj.name] = {"active": None, "colors": {}}
+
+            if self._is_active_vertex_color(obj, c.name):
+                session["original_vertexcolor"][obj.name]["active"] = c.name
+
+            attr_type = getattr(c, "data_type", "FLOAT_COLOR")
+            attr_name = self._get_color_attribute_name(c.name, c.domain, attr_type, transfer_back)
+            id_name = attr_name
+            if transfer_back:
+                id_name = c.name
+            values = {
+                "name": attr_name,
+                "domain": c.domain,
+                "type": attr_type,
+                "values": {},
+            }
+
+            for ls in obj.data.loops:
+                # support POINT and CORNER domains
+                src_idx = ls.vertex_index if c.domain == "POINT" else ls.index
+                if c:
+                    if src_idx < len(c.data):
+                        raw = c.data[src_idx].color[:]
+                        if values["type"] == "BYTE_COLOR":
+                            col = self._byte_to_float(raw)
+                        else:
+                            col = raw
+                    else:
+                        col = (0, 0, 0, 0)
+                else:
+                    col = (0, 0, 0, 0)
+
+                values["values"][src_idx] = col
+                # .append((obj.name, c.domain if attr else "CORNER", ls.vert.index, ls.index, col))
+
+            session["original_vertexcolor"][obj.name]["colors"][id_name] = values
+
+    @staticmethod
+    def _byte_to_float(c):
+        return (
+            float(c[0]),
+            float(c[1]),
+            float(c[2]),
+            float(c[3]),
+        )
+
+    def _get_color_attribute_name(self, name: str, attr_domain: str, attr_type: str, is_proxy: bool):
+        return name.split(f"_{attr_type}_{attr_domain}")[0] if is_proxy else f"{name}_{attr_type}_{attr_domain}"
+
+    def _is_active_vertex_color(self, obj: UME_SafeObject, name: str) -> bool:
+        return False if obj.data.color_attributes.active is None else obj.data.color_attributes.active.name == name
+
+    def _remove_vertex_color(self, obj: UME_SafeObject, name: str) -> None:
+        if name not in obj.data.color_attributes:
+            return
+        obj.data.color_attributes.remove(obj.data.color_attributes[name])
