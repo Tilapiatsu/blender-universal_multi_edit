@@ -127,7 +127,6 @@ class Mode(UME_EditMode):
                 dst_color = dst.data.color_attributes.get(dst_attr_name)
 
                 added_color = {}
-                # print(c_name, src_attr_name, dst_attr_name)
 
                 if src_color is None:
                     self._remove_vertex_color(dst, c_name)
@@ -154,6 +153,9 @@ class Mode(UME_EditMode):
                             if dst.name not in added_color:
                                 added_color[dst.name] = []
                             added_color[dst.name].append(dst_color.name)
+
+                        if src_color.domain != dst_color.domain or src_color.data_type != dst_color.data_type:
+                            continue
 
                         self._transfer_vertex_colors(
                             src_color, dst_color, topo, attr_type, attr_domain, transfer_back=transfer_back

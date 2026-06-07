@@ -742,7 +742,7 @@ class UME_EditMode(UME_P_EditMode):
     def _create_vertex_color(
         self, obj: UME_SafeObject, name: str, type: str, domain: str
     ) -> bpy.types.AttributeGroupMesh:
-        print(f"create color attribute {name} for {obj.name}")
+        # print(f"create color attribute {name} for {obj.name}")
         return obj.data.color_attributes.new(name=name, type=type, domain=domain)
 
     def _is_vertex_color_modified(
